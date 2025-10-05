@@ -1,0 +1,49 @@
+csm_slam_node:
+  ros__parameters:
+    # SLAM parameters
+    enable_movement_threshold: true
+    enable_odom: false
+    enable_imu: false
+    enable_loop_closure: true
+    movement_threshold_distance: 0.2
+    movement_threshold_angle: 15
+    sequence_queue_len: 100
+
+    fine_resolution: 0.05
+    coarse_resolution: 0.1
+
+    # Publish topic
+    map_topic: "/map"
+    pub_odom_topic: "/slam_odom"
+
+    # transform parameters
+    base_link_name: "base_link"
+    map_frame_name: "map"
+    odom_frame_name: "odom"
+
+    # publish parameters
+    publish_base_to_map_transform: true
+    publish_map: true
+    
+    # Subscribe topic
+    odom_topic: "odom"
+    lidar_topic: "horizontal_laser_2d"
+    imu_topic: "imu"
+
+    # Subscribe topic type
+    lidar_type: "LaserScan"
+
+    # sequence scan matcher parameters
+    sequence_match_distance: 0.2
+    sequence_match_angle: 30
+    sequence_match_factor: 5
+
+    # loop scan matcher parameters
+    loop_match_distance: 4.0
+    loop_match_angle: 45
+    loop_match_factor: 5
+
+    # slam parameters
+    loop_closure_search_distance: 6.0
+    loop_closure_score_threshold: 85.0
+    submap_distance_threshold: 6.0
