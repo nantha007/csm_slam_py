@@ -1,8 +1,8 @@
 """CSM SLAM online processing node for real-time SLAM.
 
 This module provides an online SLAM processing node that subscribes to laser scan
-and odometry data from ROS2 topics and processes them using the CSM SLAM algorithm. 
-It supports both LaserScan and MultiEchoLaserScan message types and publishes the 
+and odometry data from ROS2 topics and processes them using the CSM SLAM algorithm.
+It supports both LaserScan and MultiEchoLaserScan message types and publishes the
 resulting map, trajectory, and odometry data in real-time.
 
 The node processes incoming sensor data as it arrives and publishes results
@@ -13,35 +13,50 @@ Author: Nantha Kumar Sunder
 
 import sys
 import os
-import signal
-from typing import Optional
 
 import numpy as np
+import yaml
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
-from nav_msgs.msg import OccupancyGrid, MapMetaData, Odometry, Path
-from geometry_msgs.msg import PoseStamped, TransformStamped
+from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from tf2_ros import TransformBroadcaster
+from visualization_msgs.msg import Marker
 
-HOME_DIR = os.path.expanduser("~")
-sys.path.append(f"{HOME_DIR}/anaconda3/envs/rospy/lib/python3.12/site-packages")
 
-# Ensure core modules with local imports (e.g., from math_utils import ...) resolve
-CORE_DIR = os.path.join(os.path.dirname(__file__), "core")
-if CORE_DIR not in sys.path:
-    sys.path.insert(0, CORE_DIR)
+def _load_settings():
+    """Load settings from config/settings.yaml file."""
+    from ament_index_python.packages import get_package_share_directory
 
-from graph_slam import GraphSlam  # noqa: E402
+    config_dir = os.path.join(get_package_share_directory("csm_slam"), "config")
+    settings_file = os.path.join(config_dir, "venv_settings.yaml")
+
+    if os.path.exists(settings_file):
+        with open(settings_file, "r") as f:
+            settings = yaml.safe_load(f)
+            venv_path = settings.get("venv_path", "")
+            if venv_path:
+                venv_path = os.path.expanduser(venv_path)
+                if os.path.exists(venv_path):
+                    sys.path.append(venv_path)
+    else:
+        raise FileNotFoundError(f"Settings file not found: {settings_file}")
+
+
+_load_settings()
+
+from csm_slam.core.grid import Grid
+from .core.graph_slam import GraphSlam
+from . import ros_utils
 
 
 class CSMSlamNode(Node):
     """CSM SLAM online processing node for real-time SLAM.
 
-    This node subscribes to laser scan and odometry data from ROS2 topics and 
-    processes them using the CSM SLAM algorithm. It supports both LaserScan and 
-    MultiEchoLaserScan message types and publishes the resulting map, trajectory, 
+    This node subscribes to laser scan and odometry data from ROS2 topics and
+    processes them using the CSM SLAM algorithm. It supports both LaserScan and
+    MultiEchoLaserScan message types and publishes the resulting map, trajectory,
     and odometry data in real-time.
 
     The node processes incoming sensor data as it arrives and publishes results
@@ -60,6 +75,11 @@ class CSMSlamNode(Node):
         self._params = {}
         self._initialize()
 
+        self._skip_scan_interval = max(
+            1, int(self._params.get("skip_scan_interval", 1))
+        )
+        self._scan_counter = 0
+
         # SLAM trajectory
         self._slam = GraphSlam(self.get_logger(), self._params)
 
@@ -71,7 +91,8 @@ class CSMSlamNode(Node):
             Odometry, self._params["pub_odom_topic"], 10
         )
         self._trajectory_publisher = self.create_publisher(Path, "/slam_trajectory", 10)
-        
+        self._edges_publisher = self.create_publisher(Marker, "/slam_edges", 10)
+
         # Transform broadcaster
         self._tf_broadcaster = TransformBroadcaster(self)
 
@@ -80,7 +101,7 @@ class CSMSlamNode(Node):
         self._latest_odom = None
         self._scan_lock = False
         self._odom_lock = False
-        
+
         # Shutdown flag for graceful termination
         self._shutdown_requested = False
 
@@ -103,6 +124,7 @@ class CSMSlamNode(Node):
         self.declare_parameter("movement_threshold_distance", 0.2)
         self.declare_parameter("movement_threshold_angle", 15)
         self.declare_parameter("sequence_queue_len", 100)
+        self.declare_parameter("skip_scan_interval", 1)
 
         # Grid resolution parameters
         self.declare_parameter("fine_resolution", 0.05)
@@ -166,6 +188,9 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .integer_value,
             "sequence_queue_len": self.get_parameter("sequence_queue_len")
+            .get_parameter_value()
+            .integer_value,
+            "skip_scan_interval": self.get_parameter("skip_scan_interval")
             .get_parameter_value()
             .integer_value,
             "fine_resolution": self.get_parameter("fine_resolution")
@@ -262,6 +287,9 @@ class CSMSlamNode(Node):
         self.get_logger().info(
             f"  sequence_queue_len: {self._params['sequence_queue_len']}"
         )
+        self.get_logger().info(
+            f"  skip_scan_interval: {self._params['skip_scan_interval']}"
+        )
 
         self.get_logger().info("Grid resolution parameters:")
         self.get_logger().info(f"  fine_resolution: {self._params['fine_resolution']}")
@@ -317,29 +345,20 @@ class CSMSlamNode(Node):
 
     def cleanup(self):
         """Clean up resources and perform graceful shutdown.
-        
+
         This method should be called when the node is shutting down to ensure
         all resources are properly released and any final operations are completed.
         """
         if self._shutdown_requested:
             return  # Already shutting down
-            
+
         self._shutdown_requested = True
         self.get_logger().info("Performing cleanup...")
-        
+
         # Stop processing new data
         self._scan_lock = True
         self._odom_lock = True
-        
-        # Log final statistics if SLAM has been initialized
-        if hasattr(self._slam, '_is_initialized') and self._slam._is_initialized:
-            self.get_logger().info("=== Final SLAM Statistics ===")
-            self.get_logger().info(f"Total scans processed: {self._slam._scan_id - 1}")
-            self.get_logger().info(f"Total submaps created: {self._slam._current_submap_id - 1}")
-            if hasattr(self._slam, 'poses') and self._slam.poses.size > 0:
-                self.get_logger().info(f"Trajectory length: {self._slam.poses.shape[1]} poses")
-            self.get_logger().info("=============================")
-        
+
         self.get_logger().info("Cleanup completed successfully.")
 
     def _create_subscribers(self):
@@ -347,42 +366,38 @@ class CSMSlamNode(Node):
         # Laser scan subscriber
         if self._params["lidar_type"] == "LaserScan":
             self._scan_subscriber = self.create_subscription(
-                LaserScan,
-                self._params["lidar_topic"],
-                self._laser_scan_callback,
-                10
+                LaserScan, self._params["lidar_topic"], self._laser_scan_callback, 10
             )
         else:  # MultiEchoLaserScan
             self._scan_subscriber = self.create_subscription(
                 MultiEchoLaserScan,
                 self._params["lidar_topic"],
                 self._multi_echo_scan_callback,
-                10
+                10,
             )
-        
+
         # Odometry subscriber (only if enabled)
         if self._params["enable_odom"]:
             self._odom_subscriber = self.create_subscription(
-                Odometry,
-                self._params["odom_topic"],
-                self._odom_callback,
-                10
+                Odometry, self._params["odom_topic"], self._odom_callback, 10
             )
-        
-        self.get_logger().info(f"Subscribed to laser scan topic: {self._params['lidar_topic']}")
+
+        self.get_logger().info(
+            f"Subscribed to laser scan topic: {self._params['lidar_topic']}"
+        )
         if self._params["enable_odom"]:
-            self.get_logger().info(f"Subscribed to odometry topic: {self._params['odom_topic']}")
+            self.get_logger().info(
+                f"Subscribed to odometry topic: {self._params['odom_topic']}"
+            )
 
     def _laser_scan_callback(self, msg: LaserScan):
         """Callback for LaserScan messages."""
         if self._scan_lock or self._shutdown_requested:
             return
-        
+
         self._scan_lock = True
-        scan_xy = self._laser_to_cart(msg)
+        scan_xy = ros_utils.laser_to_cart(msg)
         if scan_xy is not None:
-            # Apply filtering if needed (uncomment for revo dataset)
-            scan_xy = self._filter_scan(scan_xy)
             self._latest_scan = scan_xy
             self._process_latest_data()
         self._scan_lock = False
@@ -391,9 +406,9 @@ class CSMSlamNode(Node):
         """Callback for MultiEchoLaserScan messages."""
         if self._scan_lock or self._shutdown_requested:
             return
-        
+
         self._scan_lock = True
-        scan_xy = self._multi_echo_to_cart(msg)
+        scan_xy = ros_utils.multi_echo_to_cart(msg)
         if scan_xy is not None:
             self._latest_scan = scan_xy
             self._process_latest_data()
@@ -403,7 +418,7 @@ class CSMSlamNode(Node):
         """Callback for Odometry messages."""
         if self._odom_lock or self._shutdown_requested:
             return
-        
+
         self._odom_lock = True
         self._latest_odom = msg
         self._odom_lock = False
@@ -412,335 +427,95 @@ class CSMSlamNode(Node):
         """Process the latest laser scan and odometry data."""
         if self._latest_scan is None:
             return
-        
+
+        self._scan_counter += 1
+        if self._skip_scan_interval > 1 and (
+            (self._scan_counter - 1) % self._skip_scan_interval != 0
+        ):
+            return
+
         # Process scan with latest odometry (if available)
         odom = self._latest_odom if self._params["enable_odom"] else None
         self._slam.process_scan(self._latest_scan, odom)
-        
+
         # Update and publish current state
         current_pose = self._slam.current_pose
-        current_map, origin = self._slam.map
-        self.publish_data(current_map, origin, current_pose)
+        map_grid = self._slam.map
+        self._publish_data(map_grid, current_pose)
 
-    def run(self):
-        """Run the online SLAM node.
-
-        Starts the ROS2 node and spins to process incoming sensor data.
-        The node will continuously process laser scans and odometry data
-        as they arrive and publish the resulting map, trajectory, and odometry.
-        """
-        self.get_logger().info("CSM SLAM online node started. Waiting for sensor data...")
-        self.get_logger().info("Press Ctrl+C to stop the node.")
-        
-        # Set up signal handlers for graceful shutdown
-        def signal_handler(signum, frame):
-            self.get_logger().info(f"Received signal {signum}. Initiating graceful shutdown...")
-            self.cleanup()
-            rclpy.shutdown()
-        
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-        
-        # Spin the node to process callbacks
-        try:
-            rclpy.spin(self)
-        except KeyboardInterrupt:
-            self.get_logger().info("Keyboard interrupt received. Shutting down CSM SLAM online node...")
-            self.cleanup()
-        except Exception as e:
-            self.get_logger().error(f"Error in CSM SLAM online node: {e}")
-            self.cleanup()
-            raise
-
-    def np_to_occ_grid(self, current_map, origin):
-        """Convert numpy array to ROS2 OccupancyGrid message.
-
-        Converts a numpy occupancy grid array to ROS2 OccupancyGrid message
-        format with proper metadata and coordinate system.
-
-        Parameters
-        ----------
-        current_map : numpy.ndarray
-            2D occupancy grid array.
-        origin : numpy.ndarray
-            Origin coordinates [x, y] of the grid.
-
-        Returns
-        -------
-        OccupancyGrid
-            ROS2 OccupancyGrid message.
-        """
-        meta_data = MapMetaData()
-        meta_data.resolution = self._params["fine_resolution"]
-        meta_data.width = current_map.shape[1]
-        meta_data.height = current_map.shape[0]
-        meta_data.origin.position.x = origin[0]
-        meta_data.origin.position.y = origin[1]
-        meta_data.origin.orientation.w = 1.0
-
-        occ_grid = OccupancyGrid()
-        occ_grid.info = meta_data
-        unknown = current_map == 125
-        occupied = current_map == 0
-        free = current_map == 255
-        current_map = current_map.astype(np.int8)
-        current_map[unknown] = -1
-        current_map[occupied] = 100
-        current_map[free] = 0
-        grid_ros = np.flipud(current_map)
-        occ_grid.data = grid_ros.flatten(order="C").tolist()
-        occ_grid.header.stamp = self.get_clock().now().to_msg()
-        occ_grid.header.frame_id = self._params["map_frame_name"]
-        return occ_grid
-
-    def theta_to_quaternion(self, theta):
-        """Convert angle to quaternion representation.
-
-        Converts a 2D rotation angle to quaternion representation
-        for ROS2 message compatibility.
-
-        Parameters
-        ----------
-        theta : float
-            Rotation angle in radians.
-
-        Returns
-        -------
-        list
-            Quaternion as [z, w] components.
-        """
-        z = np.sin(theta / 2.0)
-        w = np.cos(theta / 2.0)
-        return [z, w]
-
-    def poses_to_path(self, poses):
-        """Convert poses to ROS2 Path message.
-
-        Converts a numpy array of poses to ROS2 Path message format.
-
-        Parameters
-        ----------
-        poses : numpy.ndarray
-            3xN array of poses [x, y, theta] in meters and radians.
-
-        Returns
-        -------
-        Path
-            ROS2 Path message.
-        """
-        path = Path()
-        path.header.stamp = self.get_clock().now().to_msg()
-        path.header.frame_id = self._params["map_frame_name"]
-        for i in range(poses.shape[1]):
-            z, w = self.theta_to_quaternion(poses[2, i])
-            pose = PoseStamped()
-            pose.header.stamp = self.get_clock().now().to_msg()
-            pose.header.frame_id = self._params["map_frame_name"]
-            pose.pose.position.x = poses[0, i]
-            pose.pose.position.y = poses[1, i]
-            pose.pose.position.z = 0.0
-            z, w = self.theta_to_quaternion(poses[2, i])
-            pose.pose.orientation.z = z
-            pose.pose.orientation.w = w
-            path.poses.append(pose)
-        return path
-
-    def _publish_base_to_map_transform(self, current_pose):
+    def _publish_transforms(self, current_pose):
         """Publish the transform from base_link to map frame.
-        
+
         Publishes the transform from base_link to map frame based on the
         current robot pose estimated by SLAM.
-        
+
         Parameters
         ----------
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
         """
-        transform = TransformStamped()
-        transform.header.stamp = self.get_clock().now().to_msg()
-        transform.header.frame_id = self._params["map_frame_name"]
-        transform.child_frame_id = self._params["base_link_name"]
-        
-        # Set translation
-        transform.transform.translation.x = current_pose[0]
-        transform.transform.translation.y = current_pose[1]
-        transform.transform.translation.z = 0.0
-        
-        # Set rotation (convert theta to quaternion)
-        z, w = self.theta_to_quaternion(current_pose[2])
-        transform.transform.rotation.x = 0.0
-        transform.transform.rotation.y = 0.0
-        transform.transform.rotation.z = z
-        transform.transform.rotation.w = w
-        
+        transform = ros_utils.create_base_to_map_transform(
+            current_pose,
+            self._params["map_frame_name"],
+            self._params["base_link_name"],
+            self.get_clock().now(),
+            ros_utils.theta_to_quaternion,
+        )
         # Broadcast the transform
         self._tf_broadcaster.sendTransform(transform)
 
-    def publish_data(self, current_map, origin, current_pose):
+    def _publish_data(self, grid: Grid, current_pose: np.ndarray):
         """Publish the current map, odometry, and trajectory data.
 
         Publishes the current map, odometry, and trajectory data to the ROS2 topics.
 
         Parameters
         ----------
-        current_map : numpy.ndarray
-            2D occupancy grid array.
-        origin : numpy.ndarray
-            Origin coordinates [x, y] of the grid.
+        grid : Grid
+            Grid object containing the occupancy grid map with values
+            indicating free space, occupied space, and unknown areas,
+            along with origin and resolution information.
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
         """
-        occ_grid = self.np_to_occ_grid(current_map, origin)
+        stamp = self.get_clock().now()
+
+        occ_grid = ros_utils.grid_to_occ_grid(
+            grid,
+            self._params["map_frame_name"],
+            stamp,
+        )
         self._map_publisher.publish(occ_grid)
         odom = Odometry()
-        odom.header.stamp = self.get_clock().now().to_msg()
+        odom.header.stamp = stamp.to_msg()
         odom.header.frame_id = self._params["map_frame_name"]
         odom.child_frame_id = self._params["base_link_name"]
         odom.pose.pose.position.x = current_pose[0]
         odom.pose.pose.position.y = current_pose[1]
-        z, w = self.theta_to_quaternion(current_pose[2])
+        z, w = ros_utils.theta_to_quaternion(current_pose[2])
         odom.pose.pose.orientation.z = z
         odom.pose.pose.orientation.w = w
         cov = np.eye(6) * 0.01
         odom.pose.covariance = cov.flatten().tolist()
         self._odom_publisher.publish(odom)
-        trajectory_poses = self.poses_to_path(self._slam.poses)
+        trajectory_poses = ros_utils.poses_to_path(
+            self._slam.poses,
+            self._params["map_frame_name"],
+            stamp,
+            ros_utils.theta_to_quaternion,
+        )
         self._trajectory_publisher.publish(trajectory_poses)
-        
+
+        edges_marker = ros_utils.graph_edges_to_marker(
+            self._slam.get_graph_edges(),
+            self._params["map_frame_name"],
+            stamp,
+        )
+        self._edges_publisher.publish(edges_marker)
+
         # Publish base_link to map transform if enabled
         if self._params["publish_base_to_map_transform"]:
-            self._publish_base_to_map_transform(current_pose)
-
-
-    def _laser_to_cart(self, msg) -> Optional[np.ndarray]:
-        """Convert LaserScan message to Cartesian coordinates.
-
-        Converts a LaserScan message to 2D Cartesian coordinates,
-        filtering out invalid ranges and applying range limits.
-
-        Parameters
-        ----------
-        msg : LaserScan
-            ROS2 LaserScan message.
-
-        Returns
-        -------
-        Optional[numpy.ndarray]
-            2xN array of Cartesian coordinates, or None if no valid points.
-        """
-        # Extract ranges and filter
-        ranges = np.array(msg.ranges, dtype=np.float32)
-        n = ranges.shape[0]
-        if n == 0:
-            return None
-
-        angles = msg.angle_min + np.arange(n, dtype=np.float32) * msg.angle_increment
-
-        # Validity mask
-        rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
-        rmax = float(getattr(msg, "range_max", 20.0))
-        mask = np.isfinite(ranges)
-        mask &= ranges >= rmin
-        mask &= ranges <= min(rmax, 20.0)
-
-        if not np.any(mask):
-            return None
-
-        ranges = ranges[mask]
-        angles = angles[mask]
-
-        xs = ranges * np.cos(angles)
-        ys = ranges * np.sin(angles)
-        return np.vstack((xs, ys)).astype(np.float32)
-
-    def _multi_echo_to_cart(self, msg) -> Optional[np.ndarray]:
-        """Convert MultiEchoLaserScan message to Cartesian coordinates.
-
-        Converts a MultiEchoLaserScan message to 2D Cartesian coordinates
-        by taking the minimum valid echo per beam and applying range filtering.
-
-        Parameters
-        ----------
-        msg : MultiEchoLaserScan
-            ROS2 MultiEchoLaserScan message.
-
-        Returns
-        -------
-        Optional[numpy.ndarray]
-            2xN array of Cartesian coordinates, or None if no valid points.
-        """
-        # Convert MultiEchoLaserScan to single-echo ranges by taking the minimum valid echo per beam
-        try:
-            num = len(msg.ranges)
-        except Exception:
-            return None
-        if num == 0:
-            return None
-
-        # Build ranges array
-        ranges_list = []
-        for i in range(num):
-            echoes = getattr(msg.ranges[i], "echoes", [])
-            if len(echoes) == 0:
-                ranges_list.append(np.nan)
-                continue
-            arr = np.array(echoes, dtype=np.float32)
-            arr = arr[np.isfinite(arr)]
-            arr = arr[arr > 0.0]
-            if arr.size == 0:
-                ranges_list.append(np.nan)
-            else:
-                ranges_list.append(float(np.min(arr)))
-
-        ranges = np.array(ranges_list, dtype=np.float32)
-        angles = msg.angle_min + np.arange(num, dtype=np.float32) * msg.angle_increment
-
-        rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
-        rmax = float(getattr(msg, "range_max", 20.0))
-        mask = np.isfinite(ranges)
-        mask &= ranges >= rmin
-        mask &= ranges <= min(rmax, 20.0)
-
-        if not np.any(mask):
-            return None
-
-        ranges = ranges[mask]
-        angles = angles[mask]
-
-        xs = ranges * np.cos(angles)
-        ys = ranges * np.sin(angles)
-        return np.vstack((xs, ys)).astype(np.float32)
-
-    def _filter_scan(self, scan_xy: np.ndarray) -> np.ndarray:
-        """Filter scan points to remove robot body and close obstacles.
-
-        Removes scan points that are likely from the robot body or very
-        close obstacles that could interfere with SLAM processing.
-
-        Parameters
-        ----------
-        scan_xy : numpy.ndarray
-            2xN array of scan points in Cartesian coordinates.
-
-        Returns
-        -------
-        numpy.ndarray
-            Filtered 2xN array of scan points.
-        """
-        if scan_xy.size == 0:
-            return scan_xy
-
-        xs = scan_xy[0]
-        ys = scan_xy[1]
-
-        radii = np.hypot(xs, ys)
-        # Angle of each point relative to robot forward (x-axis)
-        angles = np.arctan2(ys, xs)
-        # Smallest absolute difference to the backward direction (pi radians)
-        angle_diff = np.abs((angles - np.pi + np.pi) % (2 * np.pi) - np.pi)
-
-        mask = ~((radii <= 2.0) & (angle_diff <= np.deg2rad(60.0)))
-        return scan_xy[:, mask]
+            self._publish_transforms(current_pose)
 
 
 def main(args=None):
@@ -750,22 +525,10 @@ def main(args=None):
     and handles cleanup.
     """
     rclpy.init(args=args)
-    node = None
-    try:
-        node = CSMSlamNode()
-        node.run()
-    except KeyboardInterrupt:
-        print("\nReceived keyboard interrupt. Shutting down...")
-    except Exception as e:
-        print(f"Error in main: {e}")
-        raise
-    finally:
-        if node is not None:
-            if not node._shutdown_requested:
-                node.cleanup()
-            node.destroy_node()
-        rclpy.shutdown()
-        print("CSM SLAM online node shutdown complete.")
+    node = CSMSlamNode()
+    rclpy.spin(node)
+    node.destroy_node()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

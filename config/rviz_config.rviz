@@ -139,6 +139,19 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /slam_trajectory
       Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Graph Edges
+      Namespaces:
+        slam_edges: true
+      Queue Size: 10
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /slam_edges
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -185,7 +198,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 76.899658203125
+      Distance: 76.899658203128
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1

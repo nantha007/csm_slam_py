@@ -15,15 +15,16 @@ import numpy as np
 from scipy.spatial import cKDTree
 from collections import deque
 
-from math_utils import (
+from csm_slam.core.math_utils import (
     get_relative_pose,
     movement_threshold,
 )
-from graph import Graph, Optimizer, EdgeType
-from localized_scan import LocalizedScan
-from scan_matcher import ScanMatcher
-from submap import Submap
-from grid import create_occupancy_grid, MultiResolutionGrid
+from csm_slam.core.graph import Graph
+from csm_slam.core.optimizer import Optimizer
+from csm_slam.core.localized_scan import LocalizedScan
+from csm_slam.core.scan_matcher import ScanMatcher
+from csm_slam.core.submap import Submap
+from csm_slam.core.grid import create_occupancy_grid, MultiResolutionGrid
 
 
 class GraphSlam:
@@ -64,20 +65,7 @@ class GraphSlam:
             Logger instance for outputting messages.
         params : dict
             Configuration parameters including:
-            - movement_threshold_distance: Minimum distance for processing
-            - movement_threshold_angle: Minimum angle for processing
-            - sequence_queue_len: Number of recent scans for matching
-            - coarse_resolution: Coarse grid resolution for matching
-            - fine_resolution: Fine grid resolution for matching
-            - sequence_match_distance: Search distance for sequence matching
-            - sequence_match_angle: Search angle for sequence matching
-            - sequence_match_factor: Smear factor for sequence matching
-            - loop_match_distance: Search distance for loop closure
-            - loop_match_angle: Search angle for loop closure
-            - loop_match_factor: Smear factor for loop closure
-            - submap_distance_threshold: Distance threshold for new submaps
-            - loop_closure_search_distance: Search radius for loop closure
-            - loop_closure_score_threshold: Score threshold for loop closure
+            - example config is in config/csm_slam_params.yaml
         """
         self._graph = Graph()
         self._optimizer = Optimizer()
@@ -175,9 +163,10 @@ class GraphSlam:
 
         Returns
         -------
-        numpy.ndarray
-            Occupancy grid map with values indicating free space,
-            occupied space, and unknown areas.
+        Grid
+            Grid object containing the occupancy grid map with values
+            indicating free space, occupied space, and unknown areas,
+            along with origin and resolution information.
         """
         scans = list(self._localized_scans.values())
         return create_occupancy_grid(scans, self._params["fine_resolution"])
@@ -207,6 +196,33 @@ class GraphSlam:
             return np.empty((3, 0))
         poses_array = np.vstack(poses)
         return poses_array.T
+
+    def get_graph_edges(self):
+        """Return absolute pose pairs for every edge currently in the graph.
+
+        Returns
+        -------
+        list of tuple
+            Each entry is ``(from_pose, to_pose)`` where pose is a 3-vector
+            ``[x, y, theta]`` describing the absolute pose of the vertex.
+        """
+        vertices = self._graph.get_vertices()
+        edges = self._graph.get_edges()
+        edge_pairs = []
+
+        for edge in edges.values():
+            from_vertex = vertices.get(edge.from_submap_id)
+            to_vertex = vertices.get(edge.to_submap_id)
+            if from_vertex is None or to_vertex is None:
+                continue
+            edge_pairs.append(
+                (
+                    np.array(from_vertex.pose, copy=True),
+                    np.array(to_vertex.pose, copy=True),
+                )
+            )
+
+        return edge_pairs
 
     def _check_movement_threshold(self, pose: np.ndarray):
         """Check if motion since last pose is below configured thresholds.
@@ -518,7 +534,6 @@ class GraphSlam:
             self._scan_id,
             rel_pose,
             seq_cov,
-            EdgeType.ODOM,
         )
 
         # Create new submap if distance threshold exceeded
@@ -538,7 +553,6 @@ class GraphSlam:
         else:
             # Add scan to current submap and mark grid as dirty
             self._current_submap.add_scan_id(self._scan_id)
-        # Increment scan counter for next iteration
         self._scan_id += 1
 
     def loop_close(self):
@@ -616,7 +630,6 @@ class GraphSlam:
                         target_first_scan_id,
                         relative_pose,
                         loop_cov,
-                        EdgeType.LOOP,
                     )
         # Trigger graph optimization after adding loop closures
         self._optimize()

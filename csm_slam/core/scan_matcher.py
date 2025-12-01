@@ -1,32 +1,24 @@
 #!/usr/bin/env python3
-"""Coarse-to-fine 2D scan matching over occupancy-grid likelihood maps.
+"""Coarse-to-fine Multi-Resolution Grid 2D correlative scan matching.
 
 This module implements a scan matching algorithm that uses distance-transform-based
-likelihood fields for robust 2D laser scan alignment. The algorithm performs
-coarse-to-fine matching over multi-resolution occupancy grids to efficiently
-find the best pose alignment.
-
-The ScanMatcher class provides the main interface for scan matching, utilizing
-Numba-optimized kernels for performance-critical operations.
+likelihood fields for robust 2D laser scan alignment.
 
 Author: Nantha Kumar Sunder
 """
 
 import numpy as np
 from scipy.ndimage import distance_transform_edt
-from math_utils import wrap_to_pi
 from numba import njit, prange
+
+from csm_slam.core.math_utils import wrap_to_pi
+from csm_slam.core.grid import Grid, MultiResolutionGrid
 
 VALID_SCAN_RATIO = 0.8
 
 
 class ScanMatcher:
-    """Scan matcher using distance-transform-based likelihood fields.
-
-    This class implements a coarse-to-fine scan matching algorithm that uses
-    distance-transform-based likelihood fields for robust 2D laser scan
-    alignment. It performs matching over multi-resolution occupancy grids
-    to efficiently find the best pose alignment.
+    """Class for performing coarse-to-fine correlative scan matching.
 
     Parameters
     ----------
@@ -37,32 +29,26 @@ class ScanMatcher:
     search_window : list
         3-element list [dx, dy, dtheta] defining search ranges.
     smear_factor : float, optional
-        Factor for distance transform smoothing (default: 10.0).
+        Factor for smearing the likelihood field (default: 10.0).
     """
 
     def __init__(
-        self, resolution_low, resolution_high, search_window, smear_factor=10.0
+        self,
+        resolution_low: float,
+        resolution_high: float,
+        search_window: np.ndarray,
+        smear_factor: float = 10.0,
     ):
-        """Initialize the scan matcher with resolution and search parameters.
-
-        Parameters
-        ----------
-        resolution_low : float
-            Resolution for coarse grid matching in meters.
-        resolution_high : float
-            Resolution for fine grid matching in meters.
-        search_window : list
-            3-element list [dx, dy, dtheta] defining search ranges.
-        smear_factor : float, optional
-            Factor for distance transform smoothing (default: 10.0).
-        """
-        # Store resolution parameters for coarse and fine matching
         self.resolution_low = resolution_low
         self.resolution_high = resolution_high
         self.search_window = search_window
         self.smear_factor = smear_factor
 
-    def _build_loglikelihood(self, grid):
+    #########################################################
+    # Private methods                                       #
+    #########################################################
+
+    def _build_loglikelihood(self, grid: Grid) -> dict:
         """Build a lookup table proportional to obstacle proximity.
 
         Creates a log-likelihood lookup table from an occupancy grid using
@@ -71,7 +57,7 @@ class ScanMatcher:
 
         Parameters
         ----------
-        grid
+        grid : Grid
             An object with attributes `grid` (2D array), `origin` (2-vector),
             and `resolution` (float).
 
@@ -89,13 +75,11 @@ class ScanMatcher:
         max_val = np.max(log_likelihood)
         if max_val > 0:
             log_likelihood /= max_val
-        return {
-            "log_lookup_table": log_likelihood,
-            "resolution": grid.resolution,
-            "origin": grid.origin,
-        }
+        return Grid(log_likelihood.astype(np.float64), grid.origin, grid.resolution)
 
-    def _build_pose_grid(self, dx_vals, dy_vals, dtheta_vals):
+    def _build_pose_grid(
+        self, dx_vals: np.ndarray, dy_vals: np.ndarray, dtheta_vals: np.ndarray
+    ) -> np.ndarray:
         """Create a grid of candidate pose offsets.
 
         Generates a 3D grid of candidate pose offsets for exhaustive search
@@ -116,14 +100,14 @@ class ScanMatcher:
         xi_grid = np.stack([dx, dy, dtheta], axis=-1).reshape(-1, 3)  # shape (N, 3)
         return xi_grid
 
-    def search(
+    def _search(
         self,
-        grid,
-        scan,
-        initial_pose,
-        search_window,
-        res_array,
-    ):
+        grid: Grid,
+        scan: np.ndarray,
+        initial_pose: np.ndarray,
+        search_window: np.ndarray,
+        res_array: np.ndarray,
+    ) -> tuple:
         """Evaluate candidate poses and return the best-scoring one.
 
         Performs exhaustive search over a grid of candidate poses and returns
@@ -131,7 +115,7 @@ class ScanMatcher:
 
         Parameters
         ----------
-        grid : dict
+        grid : Grid
             Lookup table dict from `_build_loglikelihood`.
         scan : numpy.ndarray
             2xN scan points.
@@ -165,17 +149,17 @@ class ScanMatcher:
         pose_grid = self._build_pose_grid(x_range, y_range, theta_range)
 
         # Extract grid parameters for Numba kernel
-        lookup_table = grid["log_lookup_table"]
-        resolution = float(grid["resolution"])
-        origin = grid["origin"]
+        lookup_table = grid.grid
+        resolution = grid.resolution
+        origin = grid.origin
 
         best_pose, best_score, scores = _search_scores_kernel(
-            pose_grid.astype(np.float64),
-            scan.astype(np.float64),
-            initial_pose.astype(np.float64),
-            lookup_table.astype(np.float64),
+            pose_grid,
+            scan,
+            initial_pose,
+            lookup_table,
             resolution,
-            origin.astype(np.float64),
+            origin,
         )
 
         # Grid sizes
@@ -257,7 +241,13 @@ class ScanMatcher:
         # Return best pose; mean_pose unused by caller
         return best_pose, best_score, best_pose.copy(), cov
 
-    def match(self, grid, scan, initial_pose):
+    #########################################################
+    # Public methods                                        #
+    #########################################################
+
+    def match(
+        self, grid: MultiResolutionGrid, scan: np.ndarray, initial_pose: np.ndarray
+    ) -> tuple:
         """Coarse-to-fine matching over multi-resolution grids.
 
         Performs two-stage scan matching: first coarse search over low-resolution
@@ -297,7 +287,7 @@ class ScanMatcher:
         coarse_y_res = search_y / factor
         coarse_theta_res = search_theta / factor
 
-        coarse_best_pose, coarse_best_score, _, _ = self.search(
+        coarse_best_pose, _, _, _ = self._search(
             grid_map_low,
             scan,
             initial_pose,
@@ -314,7 +304,7 @@ class ScanMatcher:
         fine_y_res = fine_search_y / factor
         fine_theta_res = fine_search_theta / factor
 
-        fine_best_pose, fine_best_score, mean_pose, cov = self.search(
+        fine_best_pose, fine_best_score, mean_pose, cov = self._search(
             grid_map_high,
             scan,
             coarse_best_pose,
@@ -324,10 +314,20 @@ class ScanMatcher:
         return fine_best_pose, fine_best_score, mean_pose, cov
 
 
+#########################################################
+# Private methods                                       #
+#########################################################
+
+
 @njit(parallel=True, fastmath=True, cache=True)
 def _search_scores_kernel(
-    pose_grid, scan, initial_pose, lookup_table, resolution, origin
-):
+    pose_grid: np.ndarray,
+    scan: np.ndarray,
+    initial_pose: np.ndarray,
+    lookup_table: np.ndarray,
+    resolution: float,
+    origin: np.ndarray,
+) -> tuple:
     """Compute matching scores for each candidate pose in parallel.
 
     This Numba-optimized function evaluates scan matching scores for all

@@ -1,6 +1,6 @@
 # CSM SLAM
 
-CSM SLAM is a ROS 2 package that implements Simultaneous Localization and Mapping (SLAM) using the Correlative Scan Matcher algorithm as the scan matcher and GTSAM as the backend optimizer. This package provides only offline and Online SLAM capabilities for processing laser scan data and building maps of unknown environments. It is a just barebones implementation where odom and imu are not used for now (Code is inplace for Odometry. However looking for a dataset to test it.).
+CSM SLAM is a ROS 2 package that implements Simultaneous Localization and Mapping (SLAM) using the Correlative Scan Matcher algorithm as the scan matcher and GTSAM as the backend optimizer. This package provides offline and Online SLAM capabilities for processing laser scan data and building maps of unknown environments.
 
 ## How to Run
 
@@ -32,7 +32,7 @@ colcon build --packages-select csm_slam
 source install/setup.bash
 ```
 
-Adjust the config file to your needs.
+Set the venv_path in config/venv_settings.yaml to the path of the virtual environment you created. Adjust the other config file to your needs.
 
 ### Run Online SLAM
 ```bash

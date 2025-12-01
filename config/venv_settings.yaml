@@ -1,0 +1,4 @@
+# Settings file for CSM SLAM
+# Path to the virtual environment site-packages directory
+venv_path: "~/anaconda3/envs/rospy/lib/python3.12/site-packages"
+

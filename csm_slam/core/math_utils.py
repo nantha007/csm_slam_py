@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Math and geometry helpers for 2D poses and scans.
 
 Author: Nantha Kumar Sunder
@@ -7,26 +8,29 @@ import numpy as np
 from numba import njit
 
 
+#########################################################
+# Public methods                                        #
+#########################################################
+
 @njit
-def transform_scan(scan: np.ndarray, pose: np.ndarray):
+def transform_scan(scan: np.ndarray, pose: np.ndarray) -> np.ndarray:
     """Transform a 2D scan by a SE(2) pose.
 
     Parameters
     ----------
-    scan
+    scan : numpy.ndarray
         Array of shape (2, N) with scan points in the sensor frame.
-    pose
-        Array of shape (3,) representing `[x, y, theta]`.
+    pose : numpy.ndarray
+        Array of shape (3,) for the pose `[x, y, theta]`.
 
     Returns
     -------
-    transformed_scan
+    numpy.ndarray
         Array of shape (2, N) with points transformed into the world frame.
     """
     R = theta_to_rot_mat(pose[2])
     t = pose[:2].reshape(2, 1)
 
-    # Perform matrix multiplication manually to avoid Numba type inference issues
     result = np.empty_like(scan)
     for i in range(scan.shape[1]):
         result[0, i] = R[0, 0] * scan[0, i] + R[0, 1] * scan[1, i] + t[0, 0]
@@ -36,17 +40,17 @@ def transform_scan(scan: np.ndarray, pose: np.ndarray):
 
 
 @njit
-def theta_to_rot_mat(theta: float):
+def theta_to_rot_mat(theta: float) -> np.ndarray:
     """Convert a scalar angle to a 2x2 rotation matrix.
 
     Parameters
     ----------
-    theta
+    theta : float
         Rotation angle in radians.
 
     Returns
     -------
-    R
+    numpy.ndarray
         Array of shape (2, 2) representing the rotation matrix.
     """
 
@@ -54,36 +58,36 @@ def theta_to_rot_mat(theta: float):
 
 
 @njit
-def wrap_to_pi(angle: float):
+def wrap_to_pi(angle: float) -> float:
     """Wrap an angle to the interval [-pi, pi].
 
     Parameters
     ----------
-    angle
+    angle : float
         Angle in radians to wrap.
 
     Returns
     -------
-    wrapped_angle
+    float
         Wrapped angle in radians.
     """
     return ((angle + np.pi) % (2 * np.pi)) - np.pi
 
 
 @njit
-def get_relative_pose(pose_a: np.ndarray, pose_b: np.ndarray):
+def get_relative_pose(pose_a: np.ndarray, pose_b: np.ndarray) -> np.ndarray:
     """Compute the pose of `pose_b` expressed in the frame of `pose_a`.
 
     Parameters
     ----------
-    pose_a
+    pose_a : numpy.ndarray
         Array of shape (3,) for the reference pose `[x, y, theta]`.
-    pose_b
+    pose_b : numpy.ndarray
         Array of shape (3,) for the target pose `[x, y, theta]`.
 
     Returns
     -------
-    relative_pose
+    numpy.ndarray
         Array of shape (3,) for the relative pose of B in A's frame.
     """
     theta1 = pose_a[2]
@@ -103,17 +107,17 @@ def get_relative_pose(pose_a: np.ndarray, pose_b: np.ndarray):
     return np.array([x_r, y_r, theta_r])
 
 
-def pose_to_matrix(pose: np.ndarray):
+def pose_to_matrix(pose: np.ndarray) -> np.ndarray:
     """Convert a pose `[x, y, theta]` to a homogeneous transform.
 
     Parameters
     ----------
-    pose
+    pose : numpy.ndarray
         Array of shape (3,) representing `[x, y, theta]`.
 
     Returns
     -------
-    matrix
+    numpy.ndarray
         Array of shape (3, 3) representing the SE(2) transform.
     """
     return np.array(
@@ -126,17 +130,17 @@ def pose_to_matrix(pose: np.ndarray):
 
 
 @njit
-def matrix_to_pose(matrix: np.ndarray):
+def matrix_to_pose(matrix: np.ndarray) -> np.ndarray:
     """Convert a homogeneous transform to pose `[x, y, theta]`.
 
     Parameters
     ----------
-    matrix
+    matrix : numpy.ndarray
         Array of shape (3, 3) representing the SE(2) transform.
 
     Returns
     -------
-    pose
+    numpy.ndarray
         Array of shape (3,) representing `[x, y, theta]`.
     """
     return np.array(
@@ -145,19 +149,19 @@ def matrix_to_pose(matrix: np.ndarray):
 
 
 @njit
-def move_to_pose(pose: np.ndarray, delta_pose: np.ndarray):
+def move_to_pose(pose: np.ndarray, delta_pose: np.ndarray) -> np.ndarray:
     """Apply a local delta to a pose in the pose's frame.
 
     Parameters
     ----------
-    pose
+    pose : numpy.ndarray
         Array of shape (3,) for the current pose `[x, y, theta]`.
-    delta_pose
+    delta_pose : numpy.ndarray
         Array of shape (3,) for the local motion `[dx, dy, dtheta]`.
 
     Returns
     -------
-    new_pose
+    numpy.ndarray
         Array of shape (3,) for the updated pose in the world frame.
     """
     x_new = pose[0] + np.cos(pose[2]) * delta_pose[0] - np.sin(pose[2]) * delta_pose[1]
@@ -169,16 +173,16 @@ def move_to_pose(pose: np.ndarray, delta_pose: np.ndarray):
 @njit(cache=True)
 def movement_threshold(
     pose: np.ndarray, last_pose: np.ndarray, movement_threshold: np.ndarray
-):
+) -> bool:
     """Check if motion between poses is below a threshold.
 
     Parameters
     ----------
-    pose
+    pose : numpy.ndarray
         Array of shape (3,) for the current pose.
-    last_pose
+    last_pose : numpy.ndarray
         Array of shape (3,) for the previous pose.
-    movement_threshold
+    movement_threshold : numpy.ndarray
         Array of shape (2,) for position and angle thresholds.
 
     Returns
