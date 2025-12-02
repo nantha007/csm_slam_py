@@ -81,13 +81,6 @@ class CSMSlamNode(Node):
     """
 
     def __init__(self):
-        """
-        Initialize the CSM SLAM offline processing node.
-
-        Sets up ROS2 parameters, initializes the SLAM algorithm, and creates
-        publishers for map, odometry, and trajectory data.
-
-        """
         # Initialize ROS2 node
         super().__init__('csm_slam_node')
         self._params = {}

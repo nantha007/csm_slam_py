@@ -73,20 +73,9 @@ class CSMSlamNode(Node):
     MultiEchoLaserScan message types and publishes the resulting map, trajectory,
     and odometry data in real-time.
 
-    The node processes incoming sensor data as it arrives and publishes results
-    continuously, making it suitable for real-time robot navigation and mapping.
-
     """
 
     def __init__(self):
-        """
-        Initialize the CSM SLAM online processing node.
-
-        Sets up ROS2 parameters, initializes the SLAM algorithm, creates
-        publishers for map, odometry, and trajectory data, and sets up
-        subscribers for laser scan and odometry data.
-
-        """
         # Initialize ROS2 node
         super().__init__('csm_slam_node')
         self._params = {}
