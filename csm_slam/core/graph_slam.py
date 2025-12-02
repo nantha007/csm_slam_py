@@ -1,3 +1,18 @@
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Graph-SLAM pipeline orchestrating scan processing and optimization.
 
@@ -12,20 +27,21 @@ submap creation, loop closure detection, and graph optimization.
 Author: Nantha Kumar Sunder
 """
 
-import numpy as np
-from scipy.spatial import cKDTree
 from collections import deque
 
+import numpy as np
+from scipy.spatial import cKDTree
+
+from csm_slam.core.graph import Graph
+from csm_slam.core.grid import create_occupancy_grid, MultiResolutionGrid
+from csm_slam.core.localized_scan import LocalizedScan
 from csm_slam.core.math_utils import (
     get_relative_pose,
     movement_threshold,
 )
-from csm_slam.core.graph import Graph
 from csm_slam.core.optimizer import Optimizer
-from csm_slam.core.localized_scan import LocalizedScan
 from csm_slam.core.scan_matcher import ScanMatcher
 from csm_slam.core.submap import Submap
-from csm_slam.core.grid import create_occupancy_grid, MultiResolutionGrid
 
 
 class GraphSlam:
@@ -95,45 +111,45 @@ class GraphSlam:
         # Movement threshold configuration for scan processing
         self._movement_threshold = np.array(
             [
-                self._params["movement_threshold_distance"],
-                np.deg2rad(self._params["movement_threshold_angle"]),
+                self._params['movement_threshold_distance'],
+                np.deg2rad(self._params['movement_threshold_angle']),
             ]
         )
         # Algorithm configuration flags
-        self._seq_running_scans_len = self._params["sequence_queue_len"]
+        self._seq_running_scans_len = self._params['sequence_queue_len']
         self._enable_movement_threshold = True
         self._enable_odom = False
         self._enable_loop_closure = True
 
         # Initialize scan matchers for sequence and loop closure matching
         self._seq_matcher = ScanMatcher(
-            self._params["coarse_resolution"],
-            self._params["fine_resolution"],
+            self._params['coarse_resolution'],
+            self._params['fine_resolution'],
             [
-                self._params["sequence_match_distance"],
-                self._params["sequence_match_distance"],
-                np.deg2rad(self._params["sequence_match_angle"]),
+                self._params['sequence_match_distance'],
+                self._params['sequence_match_distance'],
+                np.deg2rad(self._params['sequence_match_angle']),
             ],
-            smear_factor=self._params["sequence_match_factor"],
+            smear_factor=self._params['sequence_match_factor'],
         )
         self._loop_matcher = ScanMatcher(
-            self._params["coarse_resolution"],
-            self._params["fine_resolution"],
+            self._params['coarse_resolution'],
+            self._params['fine_resolution'],
             [
-                self._params["loop_match_distance"],
-                self._params["loop_match_distance"],
-                np.deg2rad(self._params["loop_match_angle"]),
+                self._params['loop_match_distance'],
+                self._params['loop_match_distance'],
+                np.deg2rad(self._params['loop_match_angle']),
             ],
-            smear_factor=self._params["loop_match_factor"],
+            smear_factor=self._params['loop_match_factor'],
         )
-        self._submap_distance_threshold = self._params["submap_distance_threshold"]
+        self._submap_distance_threshold = self._params['submap_distance_threshold']
 
         # Loop closure detection parameters
         self._loop_closure_search_distance = self._params[
-            "loop_closure_search_distance"
+            'loop_closure_search_distance'
         ]
         self._loop_closure_score_threshold = self._params[
-            "loop_closure_score_threshold"
+            'loop_closure_score_threshold'
         ]
 
         # Performance optimization caches
@@ -162,7 +178,7 @@ class GraphSlam:
         )
 
     @property
-    def map(self):
+    def occupancy_map(self):
         """
         Return an occupancy grid map.
 
@@ -178,7 +194,7 @@ class GraphSlam:
 
         """
         scans = list(self._localized_scans.values())
-        return create_occupancy_grid(scans, self._params["fine_resolution"])
+        return create_occupancy_grid(scans, self._params['fine_resolution'])
 
     @property
     def poses(self):
@@ -292,7 +308,7 @@ class GraphSlam:
         """
         if self._recent_scan_ids:
             return list(self._recent_scan_ids)
-        return list(self._localized_scans.keys())[-self._seq_running_scans_len :]
+        return list(self._localized_scans.keys())[-self._seq_running_scans_len:]
 
     def _get_sequence_grid(self):
         """
@@ -447,7 +463,7 @@ class GraphSlam:
         4. Marks all caches as dirty to force regeneration
 
         """
-        self._logger.info("Optimizing graph...")
+        self._logger.info('Optimizing graph...')
         self._graph = self._optimizer.optimize(self._graph)
 
         vertices = self._graph.get_vertices()
@@ -475,7 +491,7 @@ class GraphSlam:
         self._submap_kd_tree_dirty = True
         self._seq_grid_cache = None
 
-        self._logger.info("Graph optimization completed")
+        self._logger.info('Graph optimization completed')
 
     def process_scan(self, scan: np.ndarray, odom_pose: np.ndarray = None):
         """
@@ -520,7 +536,7 @@ class GraphSlam:
             self._graph.add_vertex(self._current_submap_id, np.array([0.0, 0.0, 0.0]))
             self._submaps[self._current_submap_id] = self._current_submap
             self._mark_submap_grid_dirty(self._current_submap_id)
-            self._record_recent_scan(localized_scan.id)
+            self._record_recent_scan(localized_scan.scan_id)
 
             # Increment scan counter and return after initialization
             self._scan_id += 1
@@ -528,7 +544,8 @@ class GraphSlam:
 
         # Check if the movement is too small
         # Note: Movement threshold checking is currently disabled
-        # if self._enable_movement_threshold and self._enable_odom and self.check_movement_threshold(odom_pose):
+        # if self._enable_movement_threshold and self._enable_odom and \
+        #     self.check_movement_threshold(odom_pose):
         #     return
 
         # Perform scan matching against recent scans
@@ -546,7 +563,7 @@ class GraphSlam:
             return
 
         # Add scan to trajectory and update current pose
-        self._logger.info(f"Processing scan {self._scan_id}")
+        self._logger.info(f'Processing scan {self._scan_id}')
         # Add localized scan to the trajectory
         localized_scan = LocalizedScan(self._scan_id, best_pose, scan)
         self._current_scan = localized_scan.get_localized_scan()
@@ -615,7 +632,7 @@ class GraphSlam:
         # Use KD-tree for efficient spatial search over submap positions
         kd_data = self._ensure_submap_kd_tree()
         if kd_data is None:
-            self._logger.info("No submaps available for KD-tree")
+            self._logger.info('No submaps available for KD-tree')
             return
         kd, _, submap_ids = kd_data
         current_xy = self._current_pose[:2]
@@ -625,10 +642,10 @@ class GraphSlam:
             current_xy, r=self._loop_closure_search_distance
         )
         if len(nearby_indices) == 0:
-            self._logger.info("No nearby submaps found")
+            self._logger.info('No nearby submaps found')
             return
         else:
-            self._logger.info(f"KD-tree submaps: {len(submap_ids)}")
+            self._logger.info(f'KD-tree submaps: {len(submap_ids)}')
 
         # For each nearby candidate submap, match every scan in current submap
         for idx in nearby_indices:
@@ -649,7 +666,8 @@ class GraphSlam:
                 )
 
                 self._logger.info(
-                    f"Loop try: cand_submap={candidate_submap_id} scan_id={scan_id} score={score}"
+                    f'Loop try: cand_submap={candidate_submap_id} '
+                    f'scan_id={scan_id} score={score}'
                 )
 
                 # Add loop closure edge if match score exceeds threshold

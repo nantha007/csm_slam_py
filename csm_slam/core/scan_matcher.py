@@ -1,4 +1,18 @@
-#!/usr/bin/env python3
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Coarse-to-fine Multi-Resolution Grid 2D correlative scan matching.
 
@@ -9,11 +23,11 @@ Author: Nantha Kumar Sunder
 """
 
 import numpy as np
-from scipy.ndimage import distance_transform_edt
 from numba import njit, prange
+from scipy.ndimage import distance_transform_edt
 
-from csm_slam.core.math_utils import wrap_to_pi
 from csm_slam.core.grid import Grid, MultiResolutionGrid
+from csm_slam.core.math_utils import wrap_to_pi
 
 VALID_SCAN_RATIO = 0.8
 
@@ -103,7 +117,7 @@ class ScanMatcher:
 
         """
         # Create 3D meshgrid and reshape to 2D array
-        dx, dy, dtheta = np.meshgrid(dx_vals, dy_vals, dtheta_vals, indexing="ij")
+        dx, dy, dtheta = np.meshgrid(dx_vals, dy_vals, dtheta_vals, indexing='ij')
         xi_grid = np.stack([dx, dy, dtheta], axis=-1).reshape(-1, 3)  # shape (N, 3)
         return xi_grid
 
@@ -195,7 +209,7 @@ class ScanMatcher:
         dth_best = wrap_to_pi(best_pose[2] - initial_pose[2])
 
         # Positional covariance
-        Xg, Yg = np.meshgrid(x_range, y_range, indexing="ij")
+        Xg, Yg = np.meshgrid(x_range, y_range, indexing='ij')
         mask_xy = xy_resp >= thr
         w_xy = np.where(mask_xy, xy_resp, 0.0)
         norm_xy = float(w_xy.sum())

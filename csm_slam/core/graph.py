@@ -1,3 +1,18 @@
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Graph structures and optimization utilities for 2D pose SLAM.
 
@@ -10,9 +25,8 @@ Graph structures and optimization utilities for 2D pose SLAM.
 Author: Nantha Kumar Sunder
 """
 
-import numpy as np
 import gtsam
-from gtsam import Pose2
+import numpy as np
 
 
 class Vertex:
@@ -31,20 +45,20 @@ class Vertex:
 
     """
 
-    def __init__(self, id: int, pose: np.ndarray):
+    def __init__(self, vertex_id: int, pose: np.ndarray):
         """
         Initialize a vertex with ID and pose.
 
         Parameters
         ----------
-        id : int
+        vertex_id : int
             Unique identifier for this vertex.
         pose : numpy.ndarray
             Initial pose [x, y, theta] in meters and radians.
 
         """
         # Store vertex metadata and pose
-        self._id = id
+        self._id = vertex_id
         self._pose = pose
 
     #########################################################
@@ -52,7 +66,7 @@ class Vertex:
     #########################################################
 
     @property
-    def id(self):
+    def vertex_id(self):
         """
         Return the vertex identifier.
 
@@ -132,9 +146,9 @@ class Edge:
     """
 
     def __init__(
-        self, id: int, from_id: int, to_id: int, pose: np.ndarray, cov: np.ndarray
+        self, edge_id: int, from_id: int, to_id: int, pose: np.ndarray, cov: np.ndarray
     ):
-        self._id = id
+        self._id = edge_id
         self._from_submap_id = from_id
         self._to_submap_id = to_id
         self._pose = pose
@@ -171,7 +185,7 @@ class Edge:
         return self._from_submap_id
 
     @property
-    def id(self):
+    def edge_id(self):
         """
         Return the edge identifier.
 
@@ -257,20 +271,20 @@ class Graph:
     # Public methods                                        #
     #########################################################
 
-    def add_vertex(self, id: int, pose: np.ndarray) -> None:
+    def add_vertex(self, vertex_id: int, pose: np.ndarray) -> None:
         """
         Add a vertex with identifier and pose.
 
         Parameters
         ----------
-        id : int
+        vertex_id : int
             Unique identifier for the vertex.
         pose : numpy.ndarray
             Pose [x, y, theta] in meters and radians.
 
         """
         # Create and store new vertex
-        self._vertices[id] = Vertex(id, pose)
+        self._vertices[vertex_id] = Vertex(vertex_id, pose)
 
     def add_edge(
         self,

@@ -1,3 +1,18 @@
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 ROS2 utility functions for CSM SLAM nodes.
 
@@ -8,11 +23,12 @@ Author: Nantha Kumar Sunder
 """
 
 import numpy as np
-from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
-from geometry_msgs.msg import PoseStamped, TransformStamped, Point
+
+from geometry_msgs.msg import Point, PoseStamped, TransformStamped
+from nav_msgs.msg import MapMetaData, OccupancyGrid, Path
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
 from visualization_msgs.msg import Marker
-from rclpy.time import Time
 
 from csm_slam.core.grid import Grid
 
@@ -99,7 +115,7 @@ def graph_edges_to_marker(
     marker = Marker()
     marker.header.frame_id = frame_id
     marker.header.stamp = stamp.to_msg()
-    marker.ns = "slam_edges"
+    marker.ns = 'slam_edges'
     marker.id = 0
     marker.type = Marker.LINE_LIST
     marker.action = Marker.ADD
@@ -171,7 +187,7 @@ def grid_to_occ_grid(
     grid.grid[occupied] = 100
     grid.grid[free] = 0
     grid_ros = np.flipud(grid.grid)
-    occ_grid.data = grid_ros.flatten(order="C").tolist()
+    occ_grid.data = grid_ros.flatten(order='C').tolist()
     occ_grid.header.stamp = stamp.to_msg()
     occ_grid.header.frame_id = frame_id
     return occ_grid
@@ -199,8 +215,8 @@ def laser_to_cart(msg: LaserScan) -> np.ndarray:
     angles = msg.angle_min + np.arange(n, dtype=np.float32) * msg.angle_increment
 
     # Validity mask
-    rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
-    rmax = float(getattr(msg, "range_max", 20.0))
+    rmin = max(0.05, float(getattr(msg, 'range_min', 0.0)))
+    rmax = float(getattr(msg, 'range_max', 20.0))
     mask = np.isfinite(ranges)
     mask &= ranges >= rmin
     mask &= ranges <= min(rmax, 20.0)
@@ -232,7 +248,7 @@ def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
 
     ranges_list = []
     for i in range(num):
-        echoes = getattr(msg.ranges[i], "echoes", [])
+        echoes = getattr(msg.ranges[i], 'echoes', [])
         arr = np.array(echoes, dtype=np.float32)
         arr = arr[np.isfinite(arr)]
         arr = arr[arr > 0.0]
@@ -241,8 +257,8 @@ def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
     ranges = np.array(ranges_list, dtype=np.float32)
     angles = msg.angle_min + np.arange(num, dtype=np.float32) * msg.angle_increment
 
-    rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
-    rmax = float(getattr(msg, "range_max", 20.0))
+    rmin = max(0.05, float(getattr(msg, 'range_min', 0.0)))
+    rmax = float(getattr(msg, 'range_max', 20.0))
     mask = np.isfinite(ranges)
     mask &= ranges >= rmin
     mask &= ranges <= min(rmax, 20.0)

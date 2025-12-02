@@ -1,4 +1,18 @@
-#!/usr/bin/env python3
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 GTSAM-backed optimizer for 2D pose graphs.
 
@@ -64,24 +78,24 @@ class Optimizer:
 
         self.graph.add(gtsam.BetweenFactorPose2(id1, id2, pose, noise))
 
-    def add_vertex(self, id: int, pose: Pose2) -> None:
+    def add_vertex(self, vertex_id: int, pose: Pose2) -> None:
         """
         Add a vertex to the initial estimate.
 
         Parameters
         ----------
-        id : int
+        vertex_id : int
             Vertex identifier.
         pose : gtsam.Pose2
             Initial pose estimate for this vertex.
 
         """
-        self.initial_estimate.insert(id, pose)
+        self.initial_estimate.insert(vertex_id, pose)
 
         if not self.first_vertex_added:
             self.graph.add(
                 gtsam.PriorFactorPose2(
-                    id,
+                    vertex_id,
                     pose,
                     self.prior_noise,
                 )
@@ -123,7 +137,7 @@ class Optimizer:
 
         # Add current graph state to GTSAM
         for vertex in graph.get_vertices().values():
-            self.add_vertex(vertex.id, vertex.to_pose2())
+            self.add_vertex(vertex.vertex_id, vertex.to_pose2())
         for edge in graph.get_edges().values():
             id1, id2 = edge.from_submap_id, edge.to_submap_id
             self.add_edge(id1, id2, edge.to_pose2(), edge.cov)

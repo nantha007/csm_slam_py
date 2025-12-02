@@ -1,4 +1,18 @@
-#!/usr/bin/env python3
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Submap container used to group scans and maintain a pose estimate for a 2D map.
 
@@ -14,7 +28,7 @@ class Submap:
 
     Parameters
     ----------
-    id : int
+    submap_id : int
         Unique identifier for this submap.
     pose : np.ndarray
         Current pose of the submap as `[x, y, theta]`.
@@ -23,8 +37,8 @@ class Submap:
 
     """
 
-    def __init__(self, id: int, pose: np.ndarray, origin_scan_id: int):
-        self._id = id
+    def __init__(self, submap_id: int, pose: np.ndarray, origin_scan_id: int):
+        self._id = submap_id
         self._pose = pose
         self._scan_ids = [origin_scan_id]
 
@@ -46,7 +60,7 @@ class Submap:
         return self._scan_ids[0]
 
     @property
-    def id(self) -> int:
+    def submap_id(self) -> int:
         """
         Return the unique identifier of the submap.
 

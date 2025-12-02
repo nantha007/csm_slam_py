@@ -1,3 +1,18 @@
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Class for representing a 2D lidar scan with an associated pose and free-space maps.
 
@@ -20,7 +35,7 @@ class LocalizedScan:
 
     Parameters
     ----------
-    id : int
+    scan_id : int
         Unique identifier for this scan.
     pose : numpy.ndarray
         Initial pose [x, y, theta] in meters and radians.
@@ -35,13 +50,13 @@ class LocalizedScan:
 
     def __init__(
         self,
-        id: int,
+        scan_id: int,
         pose: np.ndarray,
         scan: np.ndarray,
         low_resolution: float = 0.1,
         high_resolution: float = 0.05,
     ):
-        self._id = id
+        self._id = scan_id
         self._pose = pose
         self._original_scan = scan
         self._localized_scan = transform_scan(self._original_scan, self._pose)
@@ -70,18 +85,18 @@ class LocalizedScan:
 
         """
         return {
-            "low": {
-                "points": transform_scan(self._low_free_space_map, self._pose),
-                "resolution": self._low_resolution,
+            'low': {
+                'points': transform_scan(self._low_free_space_map, self._pose),
+                'resolution': self._low_resolution,
             },
-            "high": {
-                "points": transform_scan(self._high_free_space_map, self._pose),
-                "resolution": self._high_resolution,
+            'high': {
+                'points': transform_scan(self._high_free_space_map, self._pose),
+                'resolution': self._high_resolution,
             },
         }
 
     @property
-    def id(self) -> int:
+    def scan_id(self) -> int:
         """
         Return the unique identifier for this scan.
 

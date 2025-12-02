@@ -1,3 +1,18 @@
+# Copyright (C) 2025  Nantha Kumar Sunder
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 """
 Occupancy grid construction and multi-resolution grid utilities.
 
@@ -8,10 +23,11 @@ maintains coarse and fine grids for multi-resolution scan matching.
 Author: Nantha Kumar Sunder
 """
 
+from enum import Enum
+from typing import List
+
 import numpy as np
 from numba import njit
-from typing import List
-from enum import Enum
 
 from csm_slam.core.localized_scan import LocalizedScan
 
@@ -128,10 +144,10 @@ def create_occupancy_grid(
     for localized_scan in localized_scans:
         # Get appropriate resolution free-space map
         free_maps = localized_scan.free_space_maps
-        if free_maps["low"]["resolution"] == resolution:
-            free_points = free_maps["low"]["points"]
+        if free_maps['low']['resolution'] == resolution:
+            free_points = free_maps['low']['points']
         else:
-            free_points = free_maps["high"]["points"]
+            free_points = free_maps['high']['points']
         occupied_points = localized_scan.get_localized_scan()
 
         # Add points to collection if they exist
@@ -168,10 +184,10 @@ def create_occupancy_grid(
 
         # Add no-hits (free space points)
         free_maps = localized_scan.free_space_maps
-        if free_maps["low"]["resolution"] == resolution:
-            free_points = free_maps["low"]["points"]
+        if free_maps['low']['resolution'] == resolution:
+            free_points = free_maps['low']['points']
         else:
-            free_points = free_maps["high"]["points"]
+            free_points = free_maps['high']['points']
         _accumulate_no_hits(no_hits_grid, free_points, min_x, min_y, resolution)
 
     occupancy_grid = _count_to_occupancy_grid(hits_grid, no_hits_grid)
