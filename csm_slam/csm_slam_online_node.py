@@ -26,6 +26,7 @@ Author: Nantha Kumar Sunder
 
 import os
 import sys
+import threading
 
 import numpy as np
 import yaml
@@ -105,8 +106,8 @@ class CSMSlamNode(Node):
         # Data storage for latest messages
         self._latest_scan = None
         self._latest_odom = None
-        self._scan_lock = False
-        self._odom_lock = False
+        self._scan_lock = threading.Lock()
+        self._odom_lock = threading.Lock()
 
         # Shutdown flag for graceful termination
         self._shutdown_requested = False
@@ -131,7 +132,6 @@ class CSMSlamNode(Node):
         # SLAM parameters
         self.declare_parameter('enable_movement_threshold', True)
         self.declare_parameter('enable_odom', False)
-        self.declare_parameter('enable_imu', False)
         self.declare_parameter('enable_loop_closure', True)
         self.declare_parameter('movement_threshold_distance', 0.2)
         self.declare_parameter('movement_threshold_angle', 15)
@@ -158,7 +158,6 @@ class CSMSlamNode(Node):
         # Subscribe topic parameters
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('lidar_topic', '/lidar')
-        self.declare_parameter('imu_topic', '/imu')
 
         # Subscribe topic type parameters
         self.declare_parameter('lidar_type', 'LaserScan')
@@ -183,9 +182,6 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .bool_value,
             'enable_odom': self.get_parameter('enable_odom')
-            .get_parameter_value()
-            .bool_value,
-            'enable_imu': self.get_parameter('enable_imu')
             .get_parameter_value()
             .bool_value,
             'enable_loop_closure': self.get_parameter('enable_loop_closure')
@@ -240,9 +236,6 @@ class CSMSlamNode(Node):
             'lidar_topic': self.get_parameter('lidar_topic')
             .get_parameter_value()
             .string_value,
-            'imu_topic': self.get_parameter('imu_topic')
-            .get_parameter_value()
-            .string_value,
             'lidar_type': self.get_parameter('lidar_type')
             .get_parameter_value()
             .string_value,
@@ -286,7 +279,6 @@ class CSMSlamNode(Node):
             f"  enable_movement_threshold: {self._params['enable_movement_threshold']}"
         )
         self.get_logger().info(f"  enable_odom: {self._params['enable_odom']}")
-        self.get_logger().info(f"  enable_imu: {self._params['enable_imu']}")
         self.get_logger().info(
             f"  enable_loop_closure: {self._params['enable_loop_closure']}"
         )
@@ -327,7 +319,6 @@ class CSMSlamNode(Node):
         self.get_logger().info('Subscribe topic parameters:')
         self.get_logger().info(f"  odom_topic: {self._params['odom_topic']}")
         self.get_logger().info(f"  lidar_topic: {self._params['lidar_topic']}")
-        self.get_logger().info(f"  imu_topic: {self._params['imu_topic']}")
 
         self.get_logger().info('Subscribe topic type parameters:')
         self.get_logger().info(f"  lidar_type: {self._params['lidar_type']}")
@@ -385,37 +376,47 @@ class CSMSlamNode(Node):
             )
 
     def _laser_scan_callback(self, msg: LaserScan):
-        """Handle LaserScan messages."""
-        if self._scan_lock or self._shutdown_requested:
-            return
+        """
+        Handle LaserScan messages.
 
-        self._scan_lock = True
-        scan_xy = ros_utils.laser_to_cart(msg)
-        if scan_xy is not None:
+        Parameters
+        ----------
+        msg : LaserScan
+            LaserScan message.
+
+        """
+        with self._scan_lock:
+            scan_xy = ros_utils.laser_to_cart(msg)
             self._latest_scan = scan_xy
             self._process_latest_data()
-        self._scan_lock = False
 
     def _multi_echo_scan_callback(self, msg: MultiEchoLaserScan):
-        """Handle MultiEchoLaserScan messages."""
-        if self._scan_lock or self._shutdown_requested:
-            return
+        """
+        Handle MultiEchoLaserScan messages.
 
-        self._scan_lock = True
-        scan_xy = ros_utils.multi_echo_to_cart(msg)
-        if scan_xy is not None:
+        Parameters
+        ----------
+        msg : MultiEchoLaserScan
+            MultiEchoLaserScan message.
+
+        """
+        with self._scan_lock:
+            scan_xy = ros_utils.multi_echo_to_cart(msg)
             self._latest_scan = scan_xy
             self._process_latest_data()
-        self._scan_lock = False
 
     def _odom_callback(self, msg: Odometry):
-        """Handle Odometry messages."""
-        if self._odom_lock or self._shutdown_requested:
-            return
+        """
+        Handle Odometry messages.
 
-        self._odom_lock = True
-        self._latest_odom = msg
-        self._odom_lock = False
+        Parameters
+        ----------
+        msg : Odometry
+            Odometry message.
+
+        """
+        with self._odom_lock:
+            self._latest_odom = msg
 
     def _process_latest_data(self):
         """Process the latest laser scan and odometry data."""
@@ -441,9 +442,6 @@ class CSMSlamNode(Node):
         """
         Publish the transform from base_link to map frame.
 
-        Publishes the transform from base_link to map frame based on the
-        current robot pose estimated by SLAM.
-
         Parameters
         ----------
         current_pose : numpy.ndarray
@@ -462,8 +460,6 @@ class CSMSlamNode(Node):
     def _publish_data(self, grid: Grid, current_pose: np.ndarray):
         """
         Publish the current map, odometry, and trajectory data.
-
-        Publishes the current map, odometry, and trajectory data to the ROS2 topics.
 
         Parameters
         ----------
@@ -517,9 +513,6 @@ class CSMSlamNode(Node):
 def main(args=None):
     """
     Run the main entry point for the CSM SLAM online node.
-
-    Initializes ROS2, creates the SLAM node, runs the online processing,
-    and handles cleanup.
 
     """
     rclpy.init(args=args)

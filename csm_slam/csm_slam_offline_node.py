@@ -135,7 +135,6 @@ class CSMSlamNode(Node):
         # SLAM parameters
         self.declare_parameter('enable_movement_threshold', True)
         self.declare_parameter('enable_odom', False)
-        self.declare_parameter('enable_imu', False)
         self.declare_parameter('enable_loop_closure', True)
         self.declare_parameter('movement_threshold_distance', 0.2)
         self.declare_parameter('movement_threshold_angle', 15)
@@ -162,7 +161,6 @@ class CSMSlamNode(Node):
         # Subscribe topic parameters
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('lidar_topic', '/lidar')
-        self.declare_parameter('imu_topic', '/imu')
 
         # Subscribe topic type parameters
         self.declare_parameter('lidar_type', 'LaserScan')
@@ -187,9 +185,6 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .bool_value,
             'enable_odom': self.get_parameter('enable_odom')
-            .get_parameter_value()
-            .bool_value,
-            'enable_imu': self.get_parameter('enable_imu')
             .get_parameter_value()
             .bool_value,
             'enable_loop_closure': self.get_parameter('enable_loop_closure')
@@ -244,9 +239,6 @@ class CSMSlamNode(Node):
             'lidar_topic': self.get_parameter('lidar_topic')
             .get_parameter_value()
             .string_value,
-            'imu_topic': self.get_parameter('imu_topic')
-            .get_parameter_value()
-            .string_value,
             'lidar_type': self.get_parameter('lidar_type')
             .get_parameter_value()
             .string_value,
@@ -290,7 +282,6 @@ class CSMSlamNode(Node):
             f"  enable_movement_threshold: {self._params['enable_movement_threshold']}"
         )
         self.get_logger().info(f"  enable_odom: {self._params['enable_odom']}")
-        self.get_logger().info(f"  enable_imu: {self._params['enable_imu']}")
         self.get_logger().info(
             f"  enable_loop_closure: {self._params['enable_loop_closure']}"
         )
@@ -331,7 +322,6 @@ class CSMSlamNode(Node):
         self.get_logger().info('Subscribe topic parameters:')
         self.get_logger().info(f"  odom_topic: {self._params['odom_topic']}")
         self.get_logger().info(f"  lidar_topic: {self._params['lidar_topic']}")
-        self.get_logger().info(f"  imu_topic: {self._params['imu_topic']}")
 
         self.get_logger().info('Subscribe topic type parameters:')
         self.get_logger().info(f"  lidar_type: {self._params['lidar_type']}")
