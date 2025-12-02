@@ -1,4 +1,5 @@
-"""Class for representing a 2D lidar scan with an associated pose and free-space maps.
+"""
+Class for representing a 2D lidar scan with an associated pose and free-space maps.
 
 This module defines LocalizedScan, a class that keeps the original scan,
 its current pose, a localized scan (scan in world frame), and
@@ -14,7 +15,8 @@ from csm_slam.core.math_utils import transform_scan
 
 
 class LocalizedScan:
-    """A lidar scan with pose and precomputed free-space maps.
+    """
+    A lidar scan with pose and precomputed free-space maps.
 
     Parameters
     ----------
@@ -28,6 +30,7 @@ class LocalizedScan:
         Resolution for coarse free-space map in meters (default: 0.1).
     high_resolution : float, optional
         Resolution for fine free-space map in meters (default: 0.05).
+
     """
 
     def __init__(
@@ -55,7 +58,8 @@ class LocalizedScan:
 
     @property
     def free_space_maps(self) -> dict:
-        """Return free-space maps transformed to world frame.
+        """
+        Return free-space maps transformed to world frame.
 
         Returns
         -------
@@ -63,6 +67,7 @@ class LocalizedScan:
             Dictionary with keys "low" and "high", each containing:
             - "points": 2xN array of free-space points in world frame
             - "resolution": map resolution in meters
+
         """
         return {
             "low": {
@@ -77,23 +82,27 @@ class LocalizedScan:
 
     @property
     def id(self) -> int:
-        """Return the unique identifier for this scan.
+        """
+        Return the unique identifier for this scan.
 
         Returns
         -------
         int
             Unique scan identifier.
+
         """
         return self._id
 
     @property
     def pose(self) -> np.ndarray:
-        """Return the current pose of the localized scan.
+        """
+        Return the current pose of the localized scan.
 
         Returns
         -------
         numpy.ndarray
             Current pose as [x, y, theta] in meters and radians.
+
         """
         return self._pose
 
@@ -102,32 +111,38 @@ class LocalizedScan:
     #########################################################
 
     def get_original_scan(self) -> np.ndarray:
-        """Return the original scan points in the sensor frame.
+        """
+        Return the original scan points in the sensor frame.
 
         Returns
         -------
         numpy.ndarray
             2xN array of scan points in sensor coordinates.
+
         """
         return self._original_scan
 
     def get_localized_scan(self) -> np.ndarray:
-        """Return the scan points transformed into the world frame.
+        """
+        Return the scan points transformed into the world frame.
 
         Returns
         -------
         numpy.ndarray
             2xN array of scan points in world coordinates.
+
         """
         return self._localized_scan
 
     def update(self, pose: np.ndarray) -> None:
-        """Update pose and recompute localized scan.
+        """
+        Update pose and recompute localized scan.
 
         Parameters
         ----------
         pose : numpy.ndarray
             New pose [x, y, theta] in meters and radians.
+
         """
         self._pose = pose
         self._localized_scan = transform_scan(self._original_scan, self._pose)
@@ -140,7 +155,8 @@ class LocalizedScan:
 
 @njit
 def create_free_space_map(original_scan: np.ndarray, resolution: float) -> np.ndarray:
-    """Create a free-space point set from a scan using Bresenham's line algorithm.
+    """
+    Create a free-space point set from a scan using Bresenham's line algorithm.
 
     Parameters
     ----------
@@ -154,6 +170,7 @@ def create_free_space_map(original_scan: np.ndarray, resolution: float) -> np.nd
     -------
     numpy.ndarray
         2xM array of free-space points in sensor coordinates.
+
     """
     # calculate total number of points needed for allocation
     # Preallocating the result array makes numba faster by several times.
@@ -188,7 +205,8 @@ def create_free_space_map(original_scan: np.ndarray, resolution: float) -> np.nd
 
 @njit
 def bresenham(start: tuple, end: tuple) -> np.ndarray:
-    """Bresenham's line algorithm for integer coordinate generation.
+    """
+    Bresenham's line algorithm for integer coordinate generation.
 
     Implements Bresenham's line algorithm to generate all integer
     coordinates along a line between two points. This is used for
@@ -210,6 +228,7 @@ def bresenham(start: tuple, end: tuple) -> np.ndarray:
     numpy.ndarray
         Array of shape (N, 2) with integer pixel coordinates
         along the line from start to end.
+
     """
     # Extract coordinates and calculate differences
     x1, y1 = start

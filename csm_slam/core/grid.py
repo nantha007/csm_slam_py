@@ -1,4 +1,5 @@
-"""Occupancy grid construction and multi-resolution grid utilities.
+"""
+Occupancy grid construction and multi-resolution grid utilities.
 
 This module provides helper routines to accumulate hit/no-hit evidence from
 localized scans into occupancy grids and a `MultiResolutionGrid` class
@@ -22,7 +23,8 @@ class CellValue(Enum):
 
 
 class Grid:
-    """This class is used to store a grid, origin, and resolution.
+    """
+    This class is used to store a grid, origin, and resolution.
 
     Parameters
     ----------
@@ -32,6 +34,7 @@ class Grid:
         The origin of the grid in world frame.
     resolution : float
         The resolution of the grid.
+
     """
 
     def __init__(self, grid: np.ndarray, origin: np.ndarray, resolution: float):
@@ -41,7 +44,8 @@ class Grid:
 
 
 class MultiResolutionGrid:
-    """Class for maintaining coarse and fine occupancy grids.
+    """
+    Class for maintaining coarse and fine occupancy grids.
 
     This class maintains two occupancy grids at different
     resolutions from a list of localized scans.
@@ -61,6 +65,7 @@ class MultiResolutionGrid:
         Resolution for the fine occupancy grid in meters.
     localized_scans : List[LocalizedScan]
         List of LocalizedScan objects providing free/occupied points.
+
     """
 
     def __init__(
@@ -69,7 +74,8 @@ class MultiResolutionGrid:
         high_resolution: float,
         localized_scans: List[LocalizedScan],
     ):
-        """Initialize and build coarse and fine occupancy grids.
+        """
+        Initialize and build coarse and fine occupancy grids.
 
         Parameters
         ----------
@@ -79,8 +85,8 @@ class MultiResolutionGrid:
             Resolution for the fine occupancy grid in meters.
         localized_scans : List[LocalizedScan]
             List of LocalizedScan objects providing free/occupied points.
-        """
 
+        """
         self._low_resolution = low_resolution
         self._high_resolution = high_resolution
         self._localized_scans = localized_scans
@@ -98,7 +104,8 @@ def create_occupancy_grid(
     localized_scans: List[LocalizedScan],
     resolution: float,
 ) -> Grid:
-    """Create an occupancy grid from hit/no-hit evidence across scans.
+    """
+    Create an occupancy grid from hit/no-hit evidence across scans.
 
     This function processes a list of localized scans to create an occupancy
     grid by accumulating hit (occupied) and no-hit (free space) evidence.
@@ -114,8 +121,8 @@ def create_occupancy_grid(
     -------
     Grid
         Grid object
-    """
 
+    """
     # Collect all points from all scans to determine grid bounds
     all_points = []
     for localized_scan in localized_scans:
@@ -184,10 +191,11 @@ def _accumulate_hits(
     min_y: float,
     resolution: float,
 ):
-    """Accumulate hits (occupied evidence) in the grid.
+    """
+    Accumulate hits (occupied evidence) in the grid.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     hits_grid : np.ndarray
         2D grid to accumulate hits
     points : np.ndarray
@@ -196,6 +204,7 @@ def _accumulate_hits(
         Grid origin coordinates
     resolution : float
         Grid resolution
+
     """
     height, width = hits_grid.shape
 
@@ -220,10 +229,11 @@ def _accumulate_no_hits(
     min_y: float,
     resolution: float,
 ):
-    """Accumulate no-hits (free space evidence) in the grid.
+    """
+    Accumulate no-hits (free space evidence) in the grid.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     no_hits_grid : np.ndarray
         2D grid to accumulate no-hits
     points : np.ndarray
@@ -232,6 +242,7 @@ def _accumulate_no_hits(
         Grid origin coordinates
     resolution : float
         Grid resolution
+
     """
     height, width = no_hits_grid.shape
 
@@ -252,9 +263,10 @@ def _count_to_occupancy_grid(
     hits_grid: np.ndarray,
     no_hits_grid: np.ndarray,
 ) -> np.ndarray:
-    """Convert hit and no-hit counts to an occupancy grid.
+    """
+    Convert hit and no-hit counts to an occupancy grid.
 
-    Parameters:
+    Parameters
     ----------
     hits_grid : np.ndarray
         Grid with hit counts.
@@ -265,6 +277,7 @@ def _count_to_occupancy_grid(
     -------
     np.ndarray
         Grid with values indicating free space, occupied space, and unknown areas.
+
     """
     height, width = hits_grid.shape
     occupancy_grid = np.full((height, width), CellValue.UNKNOWN.value, dtype=np.uint8)

@@ -58,5 +58,4 @@ Output of the slam tested in ROS kilted, Ubuntu 24.04 and Conda environment:
 If something is not working, please open an issue.
 
 ## TODO
-- [ ] Add IMU as an option instead of using the odom as an option.
 - [ ] Add tests.

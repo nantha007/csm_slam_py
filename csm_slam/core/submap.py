@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Submap container used to group scans and maintain a pose estimate for a 2D map.
+"""
+Submap container used to group scans and maintain a pose estimate for a 2D map.
 
 Author: Nantha Kumar Sunder
 """
@@ -8,7 +9,8 @@ import numpy as np
 
 
 class Submap:
-    """A submap groups one or more scans under a common 2D pose.
+    """
+    A submap groups one or more scans under a common 2D pose.
 
     Parameters
     ----------
@@ -18,6 +20,7 @@ class Submap:
         Current pose of the submap as `[x, y, theta]`.
     origin_scan_id : int
         Identifier of the first scan that created this submap.
+
     """
 
     def __init__(self, id: int, pose: np.ndarray, origin_scan_id: int):
@@ -31,45 +34,53 @@ class Submap:
 
     @property
     def first_scan_id(self) -> int:
-        """Return the identifier of the first scan that created this submap.
+        """
+        Return the identifier of the first scan that created this submap.
 
         Returns
         -------
         int
             Identifier of the first scan that created this submap.
+
         """
         return self._scan_ids[0]
 
     @property
     def id(self) -> int:
-        """Return the unique identifier of the submap.
+        """
+        Return the unique identifier of the submap.
 
         Returns
         -------
         int
             Unique identifier for this submap.
+
         """
         return self._id
 
     @property
     def pose(self) -> np.ndarray:
-        """Return the current pose of the submap as `[x, y, theta]`.
+        """
+        Return the current pose of the submap as `[x, y, theta]`.
 
         Returns
         -------
         np.ndarray
             Current pose of the submap as `[x, y, theta]`.
+
         """
         return self._pose
 
     @property
     def scan_ids(self) -> list:
-        """Return the list of scan identifiers associated with this submap.
+        """
+        Return the list of scan identifiers associated with this submap.
 
         Returns
         -------
         list
             List of scan identifiers associated with this submap.
+
         """
         return self._scan_ids
 
@@ -79,12 +90,14 @@ class Submap:
 
     @pose.setter
     def pose(self, pose: np.ndarray) -> None:
-        """Update the current pose of the submap.
-        
+        """
+        Update the current pose of the submap.
+
         Parameters
         ----------
         pose : np.ndarray
             New pose of the submap as `[x, y, theta]`.
+
         """
         self._pose = pose
 
@@ -93,11 +106,13 @@ class Submap:
     #########################################################
 
     def add_scan_id(self, scan_id: int) -> None:
-        """Append a scan identifier to this submap.
-        
+        """
+        Append a scan identifier to this submap.
+
         Parameters
         ----------
         scan_id : int
             Identifier of the scan to add to this submap.
+
         """
         self._scan_ids.append(scan_id)

@@ -1,4 +1,5 @@
-"""ROS2 utility functions for CSM SLAM nodes.
+"""
+ROS2 utility functions for CSM SLAM nodes.
 
 This module provides common utility functions used by both online and offline
 CSM SLAM nodes for message conversion, coordinate transformations, and data processing.
@@ -26,7 +27,8 @@ def create_base_to_map_transform(
     base_link_name: str,
     stamp: Time,
 ) -> TransformStamped:
-    """Create the transform from base_link to map frame.
+    """
+    Create the transform from base_link to map frame.
 
     Parameters
     ----------
@@ -43,6 +45,7 @@ def create_base_to_map_transform(
     -------
     TransformStamped
         ROS2 TransformStamped message.
+
     """
     transform = TransformStamped()
     transform.header.stamp = stamp.to_msg()
@@ -71,7 +74,8 @@ def graph_edges_to_marker(
     line_width: float = 0.03,
     color=(0.0, 0.7, 1.0, 1.0),
 ) -> Marker:
-    """Convert pose-graph edges to a Marker for RViz visualization.
+    """
+    Convert pose-graph edges to a Marker for RViz visualization.
 
     Parameters
     ----------
@@ -90,6 +94,7 @@ def graph_edges_to_marker(
     -------
     Marker
         Marker message ready for publication.
+
     """
     marker = Marker()
     marker.header.frame_id = frame_id
@@ -128,7 +133,8 @@ def grid_to_occ_grid(
     frame_id: str,
     stamp: Time,
 ) -> OccupancyGrid:
-    """Convert numpy array to ROS2 OccupancyGrid message.
+    """
+    Convert numpy array to ROS2 OccupancyGrid message.
 
     Parameters
     ----------
@@ -145,6 +151,7 @@ def grid_to_occ_grid(
     -------
     OccupancyGrid
         ROS2 OccupancyGrid message.
+
     """
     meta_data = MapMetaData()
     meta_data.resolution = grid.resolution
@@ -171,7 +178,8 @@ def grid_to_occ_grid(
 
 
 def laser_to_cart(msg: LaserScan) -> np.ndarray:
-    """Convert LaserScan message to Cartesian coordinates.
+    """
+    Convert LaserScan message to Cartesian coordinates.
 
     Parameters
     ----------
@@ -182,6 +190,7 @@ def laser_to_cart(msg: LaserScan) -> np.ndarray:
     -------
     numpy.ndarray
         2xN array of Cartesian coordinates.
+
     """
     # Extract ranges and filter
     ranges = np.array(msg.ranges, dtype=np.float32)
@@ -205,7 +214,8 @@ def laser_to_cart(msg: LaserScan) -> np.ndarray:
 
 
 def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
-    """Convert MultiEchoLaserScan message to Cartesian coordinates.
+    """
+    Convert MultiEchoLaserScan message to Cartesian coordinates.
 
     Parameters
     ----------
@@ -216,6 +226,7 @@ def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
     -------
     numpy.ndarray
         2xN array of Cartesian coordinates.
+
     """
     num = len(msg.ranges)
 
@@ -249,7 +260,8 @@ def poses_to_path(
     frame_id: str,
     stamp: Time,
 ) -> Path:
-    """Convert poses to ROS2 Path message.
+    """
+    Convert poses to ROS2 Path message.
 
     Parameters
     ----------
@@ -264,6 +276,7 @@ def poses_to_path(
     -------
     Path
         ROS2 Path message.
+
     """
     path = Path()
     path.header.stamp = stamp.to_msg()
@@ -284,10 +297,8 @@ def poses_to_path(
 
 
 def theta_to_quaternion(theta: float) -> list:
-    """Convert angle to quaternion representation.
-
-    Converts a 2D rotation angle to quaternion representation
-    for ROS2 message compatibility.
+    """
+    Convert angle to quaternion representation.
 
     Parameters
     ----------
@@ -298,6 +309,7 @@ def theta_to_quaternion(theta: float) -> list:
     -------
     list
         Quaternion as [z, w] components.
+
     """
     z = np.sin(theta / 2.0)
     w = np.cos(theta / 2.0)

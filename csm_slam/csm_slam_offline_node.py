@@ -1,4 +1,5 @@
-"""CSM SLAM offline processing node for ROS2 bag files.
+"""
+CSM SLAM offline processing node for ROS2 bag files.
 
 This module provides an offline SLAM processing node that reads laser scan data
 from ROS2 bag files and processes them using the CSM SLAM algorithm. It supports
@@ -55,7 +56,8 @@ from . import ros_utils
 
 
 class CSMSlamNode(Node):
-    """CSM SLAM offline processing node for ROS2 bag files.
+    """
+    CSM SLAM offline processing node for ROS2 bag files.
 
     This node processes laser scan data from ROS2 bag files using the CSM SLAM
     algorithm. It supports both LaserScan and MultiEchoLaserScan message types
@@ -63,13 +65,16 @@ class CSMSlamNode(Node):
 
     The node reads bag files sequentially and processes scans in real-time,
     making it suitable for offline analysis and visualization of SLAM performance.
+
     """
 
     def __init__(self):
-        """Initialize the CSM SLAM offline processing node.
+        """
+        Initialize the CSM SLAM offline processing node.
 
         Sets up ROS2 parameters, initializes the SLAM algorithm, and creates
         publishers for map, odometry, and trajectory data.
+
         """
         # Initialize ROS2 node
         super().__init__("csm_slam_node")
@@ -350,7 +355,8 @@ class CSMSlamNode(Node):
         self.get_logger().info("==========================")
 
     def _open_bag(self, bag_path: str):
-        """Open the ROS2 bag file and return the reader, topic type map, and type class map.
+        """
+        Open the ROS2 bag file and return the reader, topic type map, and type class map.
 
         Parameters
         ----------
@@ -365,6 +371,7 @@ class CSMSlamNode(Node):
             Dictionary mapping topic names to their types.
         type_class_map : dict
             Dictionary mapping message types to their classes.
+
         """
         reader = rosbag2_py.SequentialReader()
         storage_options = rosbag2_py.StorageOptions(uri=bag_path, storage_id="sqlite3")
@@ -400,12 +407,14 @@ class CSMSlamNode(Node):
         return reader, topic_type_map, type_class_map
 
     def _publish_transforms(self, current_pose: np.ndarray):
-        """Publish the transform from base_link to map frame.
+        """
+        Publish the transform from base_link to map frame.
 
         Parameters
         ----------
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
+
         """
         transform = ros_utils.create_base_to_map_transform(
             current_pose,
@@ -417,7 +426,8 @@ class CSMSlamNode(Node):
         self._tf_broadcaster.sendTransform(transform)
 
     def _publish_data(self, grid: Grid, current_pose: np.ndarray):
-        """Publish the current map, odometry, and trajectory data.
+        """
+        Publish the current map, odometry, and trajectory data.
 
         Parameters
         ----------
@@ -427,6 +437,7 @@ class CSMSlamNode(Node):
             along with origin and resolution information.
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
+
         """
         stamp = self.get_clock().now()
 
@@ -471,10 +482,12 @@ class CSMSlamNode(Node):
     #########################################################
 
     def run(self):
-        """Process the ROS2 bag file and run SLAM algorithm.
+        """
+        Process the ROS2 bag file and run SLAM algorithm.
 
         Opens the bag file, processes all laser scan messages sequentially,
         and publishes the resulting map, trajectory, and odometry data.
+
         """
         reader, topic_type_map, type_class_map = self._open_bag(self._bag_path)
 
@@ -527,7 +540,7 @@ class CSMSlamNode(Node):
 
 
 def main(args=None):
-    """Main entry point for the CSM SLAM offline node."""
+    """Run the main entry point for the CSM SLAM offline node."""
     rclpy.init(args=args)
     node = CSMSlamNode()
     node.run()

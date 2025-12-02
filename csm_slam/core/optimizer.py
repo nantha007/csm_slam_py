@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""GTSAM-backed optimizer for 2D pose graphs.
+"""
+GTSAM-backed optimizer for 2D pose graphs.
 
 Author: Nantha Kumar Sunder
 """
@@ -12,12 +13,14 @@ from csm_slam.core.graph import Graph
 
 
 class Optimizer:
-    """GTSAM-backed optimizer for 2D pose graphs.
+    """
+    GTSAM-backed optimizer for 2D pose graphs.
 
     Parameters
     ----------
     max_iterations : int, optional
         Maximum number of optimization iterations (default: 100).
+
     """
 
     def __init__(self, max_iterations=100):
@@ -38,7 +41,8 @@ class Optimizer:
     #########################################################
 
     def add_edge(self, id1: int, id2: int, pose: Pose2, cov: np.ndarray = None) -> None:
-        """Add a between factor for the relative pose measurement between two vertices.
+        """
+        Add a between factor for the relative pose measurement between two vertices.
 
         Parameters
         ----------
@@ -51,6 +55,7 @@ class Optimizer:
         cov : numpy.ndarray, optional
             Covariance matrix associated with the measurement.
             If None, a default noise is used.
+
         """
         if cov is None:
             noise = self.odom_noise_default
@@ -60,7 +65,8 @@ class Optimizer:
         self.graph.add(gtsam.BetweenFactorPose2(id1, id2, pose, noise))
 
     def add_vertex(self, id: int, pose: Pose2) -> None:
-        """Add a vertex to the initial estimate.
+        """
+        Add a vertex to the initial estimate.
 
         Parameters
         ----------
@@ -68,8 +74,8 @@ class Optimizer:
             Vertex identifier.
         pose : gtsam.Pose2
             Initial pose estimate for this vertex.
-        """
 
+        """
         self.initial_estimate.insert(id, pose)
 
         if not self.first_vertex_added:
@@ -83,17 +89,20 @@ class Optimizer:
             self.first_vertex_added = True
 
     def get_vertices(self) -> list:
-        """Return the list of vertex ids currently in the initial estimate.
+        """
+        Return the list of vertex ids currently in the initial estimate.
 
         Returns
         -------
         list
             List of vertex ids currently in the initial estimate.
+
         """
         return list(self.initial_estimate.keys())
 
     def optimize(self, graph: Graph) -> Graph:
-        """Optimize the given Graph and write back the optimized state.
+        """
+        Optimize the given Graph and write back the optimized state.
 
         Parameters
         ----------
@@ -105,6 +114,7 @@ class Optimizer:
         -------
         Graph
             The same graph object with updated poses.
+
         """
         # Initialize the GTSAM factor graph and initial estimate
         self.graph = gtsam.NonlinearFactorGraph()

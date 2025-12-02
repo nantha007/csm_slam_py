@@ -1,4 +1,5 @@
-"""CSM SLAM online processing node for real-time SLAM.
+"""
+CSM SLAM online processing node for real-time SLAM.
 
 This module provides an online SLAM processing node that subscribes to laser scan
 and odometry data from ROS2 topics and processes them using the CSM SLAM algorithm.
@@ -52,7 +53,8 @@ from . import ros_utils
 
 
 class CSMSlamNode(Node):
-    """CSM SLAM online processing node for real-time SLAM.
+    """
+    CSM SLAM online processing node for real-time SLAM.
 
     This node subscribes to laser scan and odometry data from ROS2 topics and
     processes them using the CSM SLAM algorithm. It supports both LaserScan and
@@ -61,14 +63,17 @@ class CSMSlamNode(Node):
 
     The node processes incoming sensor data as it arrives and publishes results
     continuously, making it suitable for real-time robot navigation and mapping.
+
     """
 
     def __init__(self):
-        """Initialize the CSM SLAM online processing node.
+        """
+        Initialize the CSM SLAM online processing node.
 
         Sets up ROS2 parameters, initializes the SLAM algorithm, creates
         publishers for map, odometry, and trajectory data, and sets up
         subscribers for laser scan and odometry data.
+
         """
         # Initialize ROS2 node
         super().__init__("csm_slam_node")
@@ -108,11 +113,17 @@ class CSMSlamNode(Node):
         # Create subscribers
         self._create_subscribers()
 
+    #########################################################
+    # Private methods                                       #
+    #########################################################
+
     def _initialize(self):
-        """Initialize ROS2 parameters and SLAM algorithm.
+        """
+        Initialize ROS2 parameters and SLAM algorithm.
 
         Declares all ROS2 parameters, builds the parameter dictionary,
         initializes the SLAM algorithm, and creates publishers.
+
         """
         # Parameters (removed bag_path for online operation)
 
@@ -343,24 +354,6 @@ class CSMSlamNode(Node):
         )
         self.get_logger().info("==========================")
 
-    def cleanup(self):
-        """Clean up resources and perform graceful shutdown.
-
-        This method should be called when the node is shutting down to ensure
-        all resources are properly released and any final operations are completed.
-        """
-        if self._shutdown_requested:
-            return  # Already shutting down
-
-        self._shutdown_requested = True
-        self.get_logger().info("Performing cleanup...")
-
-        # Stop processing new data
-        self._scan_lock = True
-        self._odom_lock = True
-
-        self.get_logger().info("Cleanup completed successfully.")
-
     def _create_subscribers(self):
         """Create subscribers for laser scan and odometry data."""
         # Laser scan subscriber
@@ -391,7 +384,7 @@ class CSMSlamNode(Node):
             )
 
     def _laser_scan_callback(self, msg: LaserScan):
-        """Callback for LaserScan messages."""
+        """Handle LaserScan messages."""
         if self._scan_lock or self._shutdown_requested:
             return
 
@@ -403,7 +396,7 @@ class CSMSlamNode(Node):
         self._scan_lock = False
 
     def _multi_echo_scan_callback(self, msg: MultiEchoLaserScan):
-        """Callback for MultiEchoLaserScan messages."""
+        """Handle MultiEchoLaserScan messages."""
         if self._scan_lock or self._shutdown_requested:
             return
 
@@ -415,7 +408,7 @@ class CSMSlamNode(Node):
         self._scan_lock = False
 
     def _odom_callback(self, msg: Odometry):
-        """Callback for Odometry messages."""
+        """Handle Odometry messages."""
         if self._odom_lock or self._shutdown_requested:
             return
 
@@ -444,7 +437,8 @@ class CSMSlamNode(Node):
         self._publish_data(map_grid, current_pose)
 
     def _publish_transforms(self, current_pose):
-        """Publish the transform from base_link to map frame.
+        """
+        Publish the transform from base_link to map frame.
 
         Publishes the transform from base_link to map frame based on the
         current robot pose estimated by SLAM.
@@ -453,6 +447,7 @@ class CSMSlamNode(Node):
         ----------
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
+
         """
         transform = ros_utils.create_base_to_map_transform(
             current_pose,
@@ -465,7 +460,8 @@ class CSMSlamNode(Node):
         self._tf_broadcaster.sendTransform(transform)
 
     def _publish_data(self, grid: Grid, current_pose: np.ndarray):
-        """Publish the current map, odometry, and trajectory data.
+        """
+        Publish the current map, odometry, and trajectory data.
 
         Publishes the current map, odometry, and trajectory data to the ROS2 topics.
 
@@ -477,6 +473,7 @@ class CSMSlamNode(Node):
             along with origin and resolution information.
         current_pose : numpy.ndarray
             Current robot pose [x, y, theta] in meters and radians.
+
         """
         stamp = self.get_clock().now()
 
@@ -519,10 +516,12 @@ class CSMSlamNode(Node):
 
 
 def main(args=None):
-    """Main entry point for the CSM SLAM online node.
+    """
+    Run the main entry point for the CSM SLAM online node.
 
     Initializes ROS2, creates the SLAM node, runs the online processing,
     and handles cleanup.
+
     """
     rclpy.init(args=args)
     node = CSMSlamNode()

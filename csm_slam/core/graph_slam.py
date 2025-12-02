@@ -1,4 +1,5 @@
-"""Graph-SLAM pipeline orchestrating scan processing and optimization.
+"""
+Graph-SLAM pipeline orchestrating scan processing and optimization.
 
 This module implements a complete Graph-SLAM system that orchestrates
 scan acquisition, scan matching, submap management, and pose graph
@@ -28,7 +29,8 @@ from csm_slam.core.grid import create_occupancy_grid, MultiResolutionGrid
 
 
 class GraphSlam:
-    """Graph-SLAM algorithm implementation for 2D lidar mapping.
+    """
+    Graph-SLAM algorithm implementation for 2D lidar mapping.
 
     This class implements a complete Graph-SLAM pipeline that processes
     laser scan data to build a globally consistent map and trajectory.
@@ -51,10 +53,12 @@ class GraphSlam:
     params : dict
         Dictionary containing algorithm parameters including
         resolution settings, thresholds, and matching parameters.
+
     """
 
     def __init__(self, logger, params):
-        """Initialize the Graph-SLAM system.
+        """
+        Initialize the Graph-SLAM system.
 
         Sets up the pose graph, optimizer, and all necessary data
         structures for scan processing and map building.
@@ -66,6 +70,7 @@ class GraphSlam:
         params : dict
             Configuration parameters including:
             - example config is in config/csm_slam_params.yaml
+
         """
         self._graph = Graph()
         self._optimizer = Optimizer()
@@ -143,12 +148,14 @@ class GraphSlam:
 
     @property
     def current_pose(self):
-        """Return the current robot pose.
+        """
+        Return the current robot pose.
 
         Returns
         -------
         numpy.ndarray
             Current pose as [x, y, theta] in meters and radians.
+
         """
         return np.array(
             [self._current_pose[0], self._current_pose[1], self._current_pose[2]]
@@ -156,7 +163,8 @@ class GraphSlam:
 
     @property
     def map(self):
-        """Return an occupancy grid map.
+        """
+        Return an occupancy grid map.
 
         Creates and returns an occupancy grid map built from all
         localized scans using the fine resolution parameter.
@@ -167,13 +175,15 @@ class GraphSlam:
             Grid object containing the occupancy grid map with values
             indicating free space, occupied space, and unknown areas,
             along with origin and resolution information.
+
         """
         scans = list(self._localized_scans.values())
         return create_occupancy_grid(scans, self._params["fine_resolution"])
 
     @property
     def poses(self):
-        """Return poses for all localized scans.
+        """
+        Return poses for all localized scans.
 
         Returns
         -------
@@ -181,6 +191,7 @@ class GraphSlam:
             3xN array where each column contains [x, y, theta]
             pose for a localized scan. Returns empty array if
             no scans are available.
+
         """
         poses = [
             np.array(
@@ -198,13 +209,15 @@ class GraphSlam:
         return poses_array.T
 
     def get_graph_edges(self):
-        """Return absolute pose pairs for every edge currently in the graph.
+        """
+        Return absolute pose pairs for every edge currently in the graph.
 
         Returns
         -------
         list of tuple
             Each entry is ``(from_pose, to_pose)`` where pose is a 3-vector
             ``[x, y, theta]`` describing the absolute pose of the vertex.
+
         """
         vertices = self._graph.get_vertices()
         edges = self._graph.get_edges()
@@ -225,7 +238,8 @@ class GraphSlam:
         return edge_pairs
 
     def _check_movement_threshold(self, pose: np.ndarray):
-        """Check if motion since last pose is below configured thresholds.
+        """
+        Check if motion since last pose is below configured thresholds.
 
         Determines whether the robot has moved enough since the last
         pose to warrant processing a new scan.
@@ -240,13 +254,15 @@ class GraphSlam:
         bool
             True if movement is below threshold (skip processing),
             False if movement is significant (process scan).
+
         """
         if pose is None:
             return True
         return movement_threshold(pose, self._last_odom_pose, self._movement_threshold)
 
     def _record_recent_scan(self, scan_id: int):
-        """Record a scan ID in the recent scans queue.
+        """
+        Record a scan ID in the recent scans queue.
 
         Adds the scan ID to the deque of recent scans and invalidates
         the sequence grid cache to force regeneration.
@@ -255,12 +271,14 @@ class GraphSlam:
         ----------
         scan_id : int
             ID of the scan to record.
+
         """
         self._recent_scan_ids.append(scan_id)
         self._seq_grid_cache = None
 
     def _get_recent_scan_ids(self):
-        """Return the list of recent scan IDs for sequence grid building.
+        """
+        Return the list of recent scan IDs for sequence grid building.
 
         Returns the most recent scan IDs up to the configured queue
         length. If no recent scans are recorded, falls back to the
@@ -270,13 +288,15 @@ class GraphSlam:
         -------
         list
             List of scan IDs to use for sequence grid construction.
+
         """
         if self._recent_scan_ids:
             return list(self._recent_scan_ids)
         return list(self._localized_scans.keys())[-self._seq_running_scans_len :]
 
     def _get_sequence_grid(self):
-        """Return a cached or newly built multi-resolution grid for recent scans.
+        """
+        Return a cached or newly built multi-resolution grid for recent scans.
 
         Creates a multi-resolution occupancy grid from recent scans
         for use in scan matching. Uses caching to avoid rebuilding
@@ -287,6 +307,7 @@ class GraphSlam:
         MultiResolutionGrid or None
             Multi-resolution grid for recent scans, or None if
             no recent scans are available.
+
         """
         scan_ids = self._get_recent_scan_ids()
         if not scan_ids:
@@ -300,7 +321,8 @@ class GraphSlam:
         return grid
 
     def _mark_submap_grid_dirty(self, submap_id: int):
-        """Mark the occupancy grids of a submap as outdated.
+        """
+        Mark the occupancy grids of a submap as outdated.
 
         Adds the submap ID to the dirty set, indicating that its
         cached occupancy grid needs to be regenerated.
@@ -309,11 +331,13 @@ class GraphSlam:
         ----------
         submap_id : int
             ID of the submap whose grid cache should be invalidated.
+
         """
         self._submap_grid_dirty.add(submap_id)
 
     def _get_submap_grid(self, submap_id: int):
-        """Return a cached or rebuilt grid for a given submap ID.
+        """
+        Return a cached or rebuilt grid for a given submap ID.
 
         Retrieves the occupancy grid for a submap, rebuilding it
         if the cache is marked as dirty.
@@ -327,6 +351,7 @@ class GraphSlam:
         -------
         MultiResolutionGrid
             Multi-resolution occupancy grid for the specified submap.
+
         """
         if submap_id in self._submap_grids and submap_id not in self._submap_grid_dirty:
             return self._submap_grids[submap_id]
@@ -338,7 +363,8 @@ class GraphSlam:
         return grid
 
     def _ensure_submap_kd_tree(self):
-        """Ensure KD-tree over submap positions exists and return it with data arrays.
+        """
+        Ensure KD-tree over submap positions exists and return it with data arrays.
 
         Creates or updates a KD-tree for efficient spatial search over
         submap positions. Used for loop closure detection.
@@ -353,6 +379,7 @@ class GraphSlam:
         -----
         The KD-tree excludes the current submap to avoid self-matching
         during loop closure detection.
+
         """
         if not self._enable_loop_closure:
             return None
@@ -378,7 +405,8 @@ class GraphSlam:
         return self._submap_kd_tree, self._submap_positions, self._submap_ids
 
     def _check_new_submap(self, current_pose: np.ndarray):
-        """Check if current pose is far enough to create a new submap.
+        """
+        Check if current pose is far enough to create a new submap.
 
         Determines whether the robot has moved far enough from the
         current submap's origin to warrant creating a new submap.
@@ -392,6 +420,7 @@ class GraphSlam:
         -------
         bool
             True if a new submap should be created, False otherwise.
+
         """
         submap_pose = self._submaps[self._current_submap_id].pose
         if (
@@ -402,7 +431,8 @@ class GraphSlam:
         return False
 
     def _optimize(self):
-        """Optimize the pose graph and update scans, submaps, and caches.
+        """
+        Optimize the pose graph and update scans, submaps, and caches.
 
         Performs pose graph optimization to correct accumulated drift
         and improve global consistency. Updates all poses based on
@@ -415,6 +445,7 @@ class GraphSlam:
         2. Submap poses using their first scan pose when available
         3. Current pose to the latest scan's optimized pose
         4. Marks all caches as dirty to force regeneration
+
         """
         self._logger.info("Optimizing graph...")
         self._graph = self._optimizer.optimize(self._graph)
@@ -447,7 +478,8 @@ class GraphSlam:
         self._logger.info("Graph optimization completed")
 
     def process_scan(self, scan: np.ndarray, odom_pose: np.ndarray = None):
-        """Process a new scan, update the graph, and manage submaps.
+        """
+        Process a new scan, update the graph, and manage submaps.
 
         Main entry point for processing laser scan data. Handles
         initialization, scan matching, graph updates, submap management,
@@ -470,6 +502,7 @@ class GraphSlam:
         4. Add scan to graph with odometry edge
         5. Create new submap if distance threshold exceeded
         6. Perform loop closure detection if enabled
+
         """
         if not self._is_initialized:
             # Initialize system with first scan at origin
@@ -556,7 +589,8 @@ class GraphSlam:
         self._scan_id += 1
 
     def loop_close(self):
-        """Search for loop closures around the current submap and update graph.
+        """
+        Search for loop closures around the current submap and update graph.
 
         Performs loop closure detection by searching for nearby submaps
         and attempting to match scans from the current submap against
@@ -573,6 +607,7 @@ class GraphSlam:
 
         The method automatically triggers graph optimization after
         processing all potential loop closures.
+
         """
         if len(self._submaps) <= 1:
             return

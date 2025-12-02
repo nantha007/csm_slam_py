@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Coarse-to-fine Multi-Resolution Grid 2D correlative scan matching.
+"""
+Coarse-to-fine Multi-Resolution Grid 2D correlative scan matching.
 
 This module implements a scan matching algorithm that uses distance-transform-based
 likelihood fields for robust 2D laser scan alignment.
@@ -18,7 +19,8 @@ VALID_SCAN_RATIO = 0.8
 
 
 class ScanMatcher:
-    """Class for performing coarse-to-fine correlative scan matching.
+    """
+    Class for performing coarse-to-fine correlative scan matching.
 
     Parameters
     ----------
@@ -30,6 +32,7 @@ class ScanMatcher:
         3-element list [dx, dy, dtheta] defining search ranges.
     smear_factor : float, optional
         Factor for smearing the likelihood field (default: 10.0).
+
     """
 
     def __init__(
@@ -49,7 +52,8 @@ class ScanMatcher:
     #########################################################
 
     def _build_loglikelihood(self, grid: Grid) -> dict:
-        """Build a lookup table proportional to obstacle proximity.
+        """
+        Build a lookup table proportional to obstacle proximity.
 
         Creates a log-likelihood lookup table from an occupancy grid using
         distance transform. The table provides proximity-based scores for
@@ -65,6 +69,7 @@ class ScanMatcher:
         -------
         dict
             Dictionary with keys `log_lookup_table`, `resolution`, and `origin`.
+
         """
         obstacle_grid = np.zeros_like(grid.grid).astype(np.bool_)
         obstacle_grid[grid.grid == 0] = 1
@@ -80,7 +85,8 @@ class ScanMatcher:
     def _build_pose_grid(
         self, dx_vals: np.ndarray, dy_vals: np.ndarray, dtheta_vals: np.ndarray
     ) -> np.ndarray:
-        """Create a grid of candidate pose offsets.
+        """
+        Create a grid of candidate pose offsets.
 
         Generates a 3D grid of candidate pose offsets for exhaustive search
         over the specified ranges.
@@ -94,6 +100,7 @@ class ScanMatcher:
         -------
         numpy.ndarray
             Array of shape (N, 3) where rows are [dx, dy, dtheta].
+
         """
         # Create 3D meshgrid and reshape to 2D array
         dx, dy, dtheta = np.meshgrid(dx_vals, dy_vals, dtheta_vals, indexing="ij")
@@ -108,7 +115,8 @@ class ScanMatcher:
         search_window: np.ndarray,
         res_array: np.ndarray,
     ) -> tuple:
-        """Evaluate candidate poses and return the best-scoring one.
+        """
+        Evaluate candidate poses and return the best-scoring one.
 
         Performs exhaustive search over a grid of candidate poses and returns
         the pose with the highest likelihood score along with covariance estimation.
@@ -134,6 +142,7 @@ class ScanMatcher:
             - best_score: Best scalar score
             - scores: Full flat scores array
             - cov: Covariance matrix (3x3)
+
         """
         # Generate search ranges for each dimension
         x_range = np.arange(
@@ -248,7 +257,8 @@ class ScanMatcher:
     def match(
         self, grid: MultiResolutionGrid, scan: np.ndarray, initial_pose: np.ndarray
     ) -> tuple:
-        """Coarse-to-fine matching over multi-resolution grids.
+        """
+        Coarse-to-fine matching over multi-resolution grids.
 
         Performs two-stage scan matching: first coarse search over low-resolution
         grid, then fine search around the best coarse result using high-resolution
@@ -271,8 +281,8 @@ class ScanMatcher:
             - best_score: Score of the best pose
             - mean_pose: Mean pose (unused by caller)
             - cov: 3x3 covariance estimate
-        """
 
+        """
         grid_map_low = self._build_loglikelihood(grid.coarse_grid)
         grid_map_high = self._build_loglikelihood(grid.fine_grid)
 
@@ -328,7 +338,8 @@ def _search_scores_kernel(
     resolution: float,
     origin: np.ndarray,
 ) -> tuple:
-    """Compute matching scores for each candidate pose in parallel.
+    """
+    Compute matching scores for each candidate pose in parallel.
 
     This Numba-optimized function evaluates scan matching scores for all
     candidate poses in parallel. It transforms scan points according to
@@ -357,6 +368,7 @@ def _search_scores_kernel(
         - best_pose: Best pose found
         - best_score: Score of best pose
         - scores: Array of scores for all poses
+
     """
     m = pose_grid.shape[0]
     height = lookup_table.shape[0]
