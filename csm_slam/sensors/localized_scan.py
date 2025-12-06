@@ -26,7 +26,7 @@ Author: Nantha Kumar Sunder
 import numpy as np
 from numba import njit, prange
 
-from csm_slam.core.math_utils import transform_scan
+from csm_slam.utils.math_utils import transform_scan
 
 
 class LocalizedScan:
@@ -191,8 +191,8 @@ def create_free_space_map(original_scan: np.ndarray, resolution: float) -> np.nd
     # Preallocating the result array makes numba faster by several times.
     total_points = 0
     for i in prange(original_scan.shape[1]):
-        end_x = np.rint(original_scan[0, i] / resolution)
-        end_y = np.rint(original_scan[1, i] / resolution)
+        end_x = np.trunc(original_scan[0, i] / resolution)
+        end_y = np.trunc(original_scan[1, i] / resolution)
         line_points = bresenham((0, 0), (int(end_x), int(end_y)))
         total_points += max(0, line_points.shape[0] - 1)
 
@@ -201,8 +201,8 @@ def create_free_space_map(original_scan: np.ndarray, resolution: float) -> np.nd
 
     point_idx = 0
     for i in prange(original_scan.shape[1]):
-        end_x = np.rint(original_scan[0, i] / resolution)
-        end_y = np.rint(original_scan[1, i] / resolution)
+        end_x = np.trunc(original_scan[0, i] / resolution)
+        end_y = np.trunc(original_scan[1, i] / resolution)
 
         free_space_coords = bresenham((0, 0), (int(end_x), int(end_y)))
 

@@ -35,6 +35,7 @@ import rclpy
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
+from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
 from visualization_msgs.msg import Marker
 
@@ -60,7 +61,7 @@ def _load_settings():
 
 _load_settings()
 
-from csm_slam.core.grid import Grid  # noqa: E402
+from csm_slam.mapping.grid import Grid  # noqa: E402
 from .core.graph_slam import GraphSlam  # noqa: E402
 from . import ros_utils  # noqa: E402
 
@@ -115,6 +116,12 @@ class CSMSlamNode(Node):
         # Create subscribers
         self._create_subscribers()
 
+        # Create service for saving pose graph
+        self._save_graph_service = self.create_service(
+            Trigger, 'save_pose_graph', self._save_pose_graph_callback
+        )
+        self.get_logger().info('Service "save_pose_graph" is ready')
+
     #########################################################
     # Private methods                                       #
     #########################################################
@@ -145,6 +152,7 @@ class CSMSlamNode(Node):
         # Publish topic parameters
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('pub_odom_topic', '/slam_odom')
+        self.declare_parameter('pose_graph_output_path', '')
 
         # Transform parameters
         self.declare_parameter('base_link_name', 'base_link')
@@ -211,6 +219,9 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .string_value,
             'pub_odom_topic': self.get_parameter('pub_odom_topic')
+            .get_parameter_value()
+            .string_value,
+            'pose_graph_output_path': self.get_parameter('pose_graph_output_path')
             .get_parameter_value()
             .string_value,
             'base_link_name': self.get_parameter('base_link_name')
@@ -304,6 +315,9 @@ class CSMSlamNode(Node):
         self.get_logger().info('Publish topic parameters:')
         self.get_logger().info(f"  map_topic: {self._params['map_topic']}")
         self.get_logger().info(f"  pub_odom_topic: {self._params['pub_odom_topic']}")
+        self.get_logger().info(
+            f"  pose_graph_output_path: {self._params['pose_graph_output_path']}"
+        )
 
         self.get_logger().info('Transform parameters:')
         self.get_logger().info(f"  base_link_name: {self._params['base_link_name']}")
@@ -509,12 +523,59 @@ class CSMSlamNode(Node):
         if self._params['publish_base_to_map_transform']:
             self._publish_transforms(current_pose)
 
+    def _save_pose_graph_callback(self, request, response):
+        """
+        Service callback to save the pose graph to an HDF5 file.
+
+        Parameters
+        ----------
+        request : Trigger.Request
+            Service request (empty for Trigger service).
+        response : Trigger.Response
+            Service response containing success status and message.
+
+        Returns
+        -------
+        Trigger.Response
+            Response with success flag and message.
+
+        """
+        try:
+            output_path = self._params.get('pose_graph_output_path', '')
+            if not output_path:
+                # Generate default filename with timestamp
+                import datetime
+                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_path = f'pose_graph_{timestamp}.pg'
+                self.get_logger().info(
+                    f'No output path specified, using default: {output_path}'
+                )
+
+            # Ensure .pg extension
+            if not output_path.endswith('.pg'):
+                output_path = f'{output_path}.pg'
+
+            # Export the pose graph
+            self._slam.export_pose_graph(
+                output_path,
+                extra_meta={
+                    'map_frame': self._params['map_frame_name'],
+                    'base_link': self._params['base_link_name'],
+                },
+            )
+
+            response.success = True
+            response.message = f'Pose graph saved to {output_path}'
+            self.get_logger().info(response.message)
+        except Exception as exc:
+            response.success = False
+            response.message = f'Failed to save pose graph: {str(exc)}'
+            self.get_logger().error(response.message)
+        return response
+
 
 def main(args=None):
-    """
-    Run the main entry point for the CSM SLAM online node.
-
-    """
+    """Run the main entry point for the CSM SLAM online node."""
     rclpy.init(args=args)
     node = CSMSlamNode()
     rclpy.spin(node)

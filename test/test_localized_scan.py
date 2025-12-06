@@ -13,11 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for localized scan class representing 2D lidar scan with pose."""
+"""
+Tests for localized scan class representing 2D lidar scan with pose.
+
+Author: Nantha Kumar Sunder
+"""
 
 import numpy as np
 
-from csm_slam.core.localized_scan import LocalizedScan, bresenham, create_free_space_map
+from csm_slam.sensors.localized_scan import LocalizedScan, bresenham, create_free_space_map
 
 
 class TestLocalizedScan:

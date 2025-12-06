@@ -26,8 +26,8 @@ import numpy as np
 from numba import njit, prange
 from scipy.ndimage import distance_transform_edt
 
-from csm_slam.core.grid import Grid, MultiResolutionGrid
-from csm_slam.core.math_utils import wrap_to_pi
+from csm_slam.mapping.grid import Grid, MultiResolutionGrid
+from csm_slam.utils.math_utils import wrap_to_pi
 
 VALID_SCAN_RATIO = 0.8
 

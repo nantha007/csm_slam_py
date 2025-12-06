@@ -62,7 +62,7 @@ def _load_settings():
 
 _load_settings()
 
-from csm_slam.core.grid import Grid  # noqa: E402
+from csm_slam.mapping.grid import Grid  # noqa: E402
 from .core.graph_slam import GraphSlam  # noqa: E402
 from . import ros_utils  # noqa: E402
 
@@ -148,6 +148,7 @@ class CSMSlamNode(Node):
         # Publish topic parameters
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('pub_odom_topic', '/slam_odom')
+        self.declare_parameter('pose_graph_output_path', '')
 
         # Transform parameters
         self.declare_parameter('base_link_name', 'base_link')
@@ -214,6 +215,9 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .string_value,
             'pub_odom_topic': self.get_parameter('pub_odom_topic')
+            .get_parameter_value()
+            .string_value,
+            'pose_graph_output_path': self.get_parameter('pose_graph_output_path')
             .get_parameter_value()
             .string_value,
             'base_link_name': self.get_parameter('base_link_name')
@@ -307,6 +311,9 @@ class CSMSlamNode(Node):
         self.get_logger().info('Publish topic parameters:')
         self.get_logger().info(f"  map_topic: {self._params['map_topic']}")
         self.get_logger().info(f"  pub_odom_topic: {self._params['pub_odom_topic']}")
+        self.get_logger().info(
+            f"  pose_graph_output_path: {self._params['pose_graph_output_path']}"
+        )
 
         self.get_logger().info('Transform parameters:')
         self.get_logger().info(f"  base_link_name: {self._params['base_link_name']}")
@@ -485,7 +492,6 @@ class CSMSlamNode(Node):
 
         """
         reader, topic_type_map, type_class_map = self._open_bag(self._bag_path)
-
         # Stream all messages
         num_scans = 0
         while reader.has_next():
@@ -531,7 +537,13 @@ class CSMSlamNode(Node):
             num_scans += 1
 
         self.get_logger().info(f'Finished processing {num_scans} scans')
-        self._slam.loop_close()
+        self._slam.loop_closure()
+        self._slam.shutdown()
+        self._slam.export_pose_graph(
+            output_path=self._params.get('pose_graph_output_path', ''),
+            bag_path=self._bag_path,
+        )
+        reader.close()
 
 
 def main(args=None):

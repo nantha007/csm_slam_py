@@ -7,3 +7,6 @@ numba>=0.56.0
 
 # Graph optimization
 gtsam>=4.1.0
+
+# File storage
+h5py>=3.8.0

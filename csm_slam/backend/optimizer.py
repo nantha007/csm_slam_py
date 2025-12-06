@@ -23,7 +23,7 @@ import gtsam
 import numpy as np
 from gtsam import Pose2
 
-from csm_slam.core.graph import Graph
+from csm_slam.backend.graph import Graph
 
 
 class Optimizer:
@@ -151,13 +151,13 @@ class Optimizer:
         # Update vertex poses with optimized poses
         for vertex_id, vertex in graph.get_vertices().items():
             optimized_pose = result.atPose2(vertex_id)
-            vertex.from_pose2(optimized_pose)
+            graph.update_vertex(vertex_id, optimized_pose)
 
         # Update edge relative poses with optimized vertex poses
-        for edge in graph.get_edges().values():
-            from_pose = result.atPose2(edge.from_submap_id)
-            to_pose = result.atPose2(edge.to_submap_id)
-            relative_opt = from_pose.between(to_pose)
-            edge.from_pose2(relative_opt)
+        # for edge in graph.get_edges().values():
+        #     from_pose = result.atPose2(edge.from_submap_id)
+        #     to_pose = result.atPose2(edge.to_submap_id)
+        #     relative_opt = from_pose.between(to_pose)
+        #     edge.from_pose2(relative_opt)
 
         return graph

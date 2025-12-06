@@ -13,16 +13,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for occupancy grid construction and multi-resolution grid utilities."""
+"""
+Tests for occupancy grid construction and multi-resolution grid utilities.
+
+Author: Nantha Kumar Sunder
+"""
 
 import numpy as np
 
-from csm_slam.core.grid import (
+from csm_slam.mapping.grid import (
     Grid,
     MultiResolutionGrid,
     create_occupancy_grid,
 )
-from csm_slam.core.localized_scan import LocalizedScan
+from csm_slam.sensors.localized_scan import LocalizedScan
 
 
 class TestGrid:

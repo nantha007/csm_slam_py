@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for GTSAM-backed optimizer for 2D pose graphs."""
+"""
+Tests for GTSAM-backed optimizer for 2D pose graphs.
+
+Author: Nantha Kumar Sunder
+"""
 
 import os
 import sys
@@ -31,8 +35,8 @@ load_settings()
 
 from gtsam import Pose2  # noqa: E402
 
-from csm_slam.core.graph import Graph  # noqa: E402
-from csm_slam.core.optimizer import Optimizer  # noqa: E402
+from csm_slam.backend.graph import Graph  # noqa: E402
+from csm_slam.backend.optimizer import Optimizer  # noqa: E402
 
 
 class TestOptimizer:
@@ -120,15 +124,14 @@ class TestOptimizer:
 
         # Optimize
         optimizer = Optimizer()
-        optimized_graph = optimizer.optimize(graph)
+        optimizer.optimize(graph)
 
         # Check that graph was modified
-        assert optimized_graph is graph
-        assert len(optimized_graph.get_vertices()) == 2
-        assert len(optimized_graph.get_edges()) == 1
+        assert len(graph.get_vertices()) == 2
+        assert len(graph.get_edges()) == 1
 
         # Check that poses were updated
-        vertices = optimized_graph.get_vertices()
+        vertices = graph.get_vertices()
         assert vertices[0].pose is not None
         assert vertices[1].pose is not None
         # Verify poses are numpy arrays
@@ -153,8 +156,8 @@ class TestOptimizer:
         graph.add_edge(2, 0, np.array([-2.0, 0.0, 0.0]), np.eye(3) * 0.1)
 
         optimizer = Optimizer()
-        optimized_graph = optimizer.optimize(graph)
+        optimizer.optimize(graph)
 
-        assert len(optimized_graph.get_vertices()) == 3
-        assert len(optimized_graph.get_edges()) == 3
+        assert len(graph.get_vertices()) == 3
+        assert len(graph.get_edges()) == 3
 

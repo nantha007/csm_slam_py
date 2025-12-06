@@ -13,11 +13,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for submap container used to group scans and maintain a pose estimate."""
+"""
+Tests for submap container used to group scans and maintain a pose estimate.
+
+Author: Nantha Kumar Sunder
+"""
+
 
 import numpy as np
 
-from csm_slam.core.submap import Submap
+from csm_slam.mapping.submap import Submap
 
 
 class TestSubmap:

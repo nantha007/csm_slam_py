@@ -18,6 +18,8 @@ Helper utilities for test files.
 
 This module provides helper functions for loading settings and configuring
 the test environment, such as adding virtual environment paths to sys.path.
+
+Author: Nantha Kumar Sunder
 """
 
 import os

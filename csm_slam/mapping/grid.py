@@ -29,7 +29,7 @@ from typing import List
 import numpy as np
 from numba import njit
 
-from csm_slam.core.localized_scan import LocalizedScan
+from csm_slam.sensors.localized_scan import LocalizedScan
 
 
 class CellValue(Enum):

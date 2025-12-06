@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Test for PEP 257 compliance.
+
+Author: Nantha Kumar Sunder
+"""
+
 from ament_pep257.main import main
 import pytest
 

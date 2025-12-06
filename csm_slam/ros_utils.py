@@ -30,7 +30,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
 from visualization_msgs.msg import Marker
 
-from csm_slam.core.grid import Grid
+from csm_slam.mapping.grid import Grid
 
 #########################################################
 # Public functions                                      #

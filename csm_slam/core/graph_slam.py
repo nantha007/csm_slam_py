@@ -27,21 +27,24 @@ submap creation, loop closure detection, and graph optimization.
 Author: Nantha Kumar Sunder
 """
 
+import os
+import time
 from collections import deque
 
 import numpy as np
-from scipy.spatial import cKDTree
 
-from csm_slam.core.graph import Graph
-from csm_slam.core.grid import create_occupancy_grid, MultiResolutionGrid
-from csm_slam.core.localized_scan import LocalizedScan
-from csm_slam.core.math_utils import (
+from csm_slam.backend.graph import Graph
+from csm_slam.core.loop_closure import LoopClosure
+from csm_slam.io.pg_export import save_pose_graph_hdf5
+from csm_slam.mapping.grid import create_occupancy_grid, MultiResolutionGrid
+from csm_slam.sensors.localized_scan import LocalizedScan
+from csm_slam.utils.math_utils import (
     get_relative_pose,
     movement_threshold,
 )
-from csm_slam.core.optimizer import Optimizer
-from csm_slam.core.scan_matcher import ScanMatcher
-from csm_slam.core.submap import Submap
+from csm_slam.backend.optimizer import Optimizer
+from csm_slam.frontend.scan_matcher import ScanMatcher
+from csm_slam.mapping.submap import Submap
 
 
 class GraphSlam:
@@ -151,16 +154,23 @@ class GraphSlam:
         self._loop_closure_score_threshold = self._params[
             'loop_closure_score_threshold'
         ]
-
         # Performance optimization caches
         self._recent_scan_ids = deque(maxlen=self._seq_running_scans_len)
-        self._seq_grid_cache = None
-        self._submap_grids = {}
-        self._submap_grid_dirty = set()
-        self._submap_kd_tree = None
-        self._submap_kd_tree_dirty = True
-        self._submap_positions = None
-        self._submap_ids = None
+
+        # Optimization timing
+        self._last_optimization_time = 0.0
+        self._optimization_interval = self._params.get('optimization_interval', 5.0)
+
+        # Loop-closure helper for search and matching
+        self._loop_closure = LoopClosure(
+            self._logger,
+            self._loop_matcher,
+            self._submaps,
+            self._localized_scans,
+            self._graph,
+            self._loop_closure_search_distance,
+            self._loop_closure_score_threshold,
+        )
 
     @property
     def current_pose(self):
@@ -236,10 +246,10 @@ class GraphSlam:
 
         """
         vertices = self._graph.get_vertices()
-        edges = self._graph.get_edges()
+        edges = list(self._graph.get_edges().values())
         edge_pairs = []
 
-        for edge in edges.values():
+        for edge in edges:
             from_vertex = vertices.get(edge.from_submap_id)
             to_vertex = vertices.get(edge.to_submap_id)
             if from_vertex is None or to_vertex is None:
@@ -252,6 +262,85 @@ class GraphSlam:
             )
 
         return edge_pairs
+
+    def get_graph(self) -> Graph:
+        """
+        Return the underlying pose graph object.
+
+        Returns
+        -------
+        Graph
+            Graph containing all vertices and edges.
+
+        """
+        return self._graph
+
+    def get_localized_scans(self):
+        """
+        Return a copy of the localized scans mapping keyed by scan_id.
+
+        Returns
+        -------
+        dict
+            Mapping of scan_id to LocalizedScan objects.
+
+        """
+        return dict(self._localized_scans)
+
+    def export_pose_graph(
+        self,
+        output_path: str = '',
+        bag_path: str | None = None,
+        extra_meta: dict | None = None,
+    ) -> str:
+        """
+        Export the pose graph and scans to an HDF5 `.pg` file.
+
+        Parameters
+        ----------
+        output_path : str, optional
+            Destination path. If empty, a default is chosen.
+        bag_path : str, optional
+            Bag path used to derive a default output name when output_path is empty.
+        extra_meta : dict, optional
+            Additional metadata to store in the file.
+
+        Returns
+        -------
+        str
+            Absolute path of the written file.
+
+        """
+        resolved_path = output_path
+        if not resolved_path:
+            if bag_path:
+                bag_dir = os.path.dirname(bag_path)
+                bag_base = os.path.splitext(os.path.basename(bag_path))[0]
+                resolved_path = os.path.join(bag_dir, f'{bag_base}_pose_graph.pg')
+            else:
+                resolved_path = 'pose_graph.pg'
+        elif not resolved_path.endswith('.pg'):
+            resolved_path = f'{resolved_path}.pg'
+
+        meta = {
+            'map_frame': self._params.get('map_frame_name', 'map'),
+            'base_link': self._params.get('base_link_name', 'base_link'),
+        }
+        if bag_path:
+            meta['bag_path'] = bag_path
+        if extra_meta:
+            meta.update(extra_meta)
+
+        try:
+            graph = self.get_graph()
+            scans = self.get_localized_scans().values()
+            save_pose_graph_hdf5(graph, scans, resolved_path, meta=meta)
+            self._logger.info(f'Saved pose graph to {resolved_path}')
+        except Exception as exc:
+            self._logger.error(f'Failed to save pose graph: {exc}')
+            raise
+
+        return os.path.abspath(resolved_path)
 
     def _check_movement_threshold(self, pose: np.ndarray):
         """
@@ -272,16 +361,13 @@ class GraphSlam:
             False if movement is significant (process scan).
 
         """
-        if pose is None:
-            return True
         return movement_threshold(pose, self._last_odom_pose, self._movement_threshold)
 
     def _record_recent_scan(self, scan_id: int):
         """
         Record a scan ID in the recent scans queue.
 
-        Adds the scan ID to the deque of recent scans and invalidates
-        the sequence grid cache to force regeneration.
+        Adds the scan ID to the deque of recent scans.
 
         Parameters
         ----------
@@ -290,7 +376,6 @@ class GraphSlam:
 
         """
         self._recent_scan_ids.append(scan_id)
-        self._seq_grid_cache = None
 
     def _get_recent_scan_ids(self):
         """
@@ -312,11 +397,10 @@ class GraphSlam:
 
     def _get_sequence_grid(self):
         """
-        Return a cached or newly built multi-resolution grid for recent scans.
+        Return a newly built multi-resolution grid for recent scans.
 
         Creates a multi-resolution occupancy grid from recent scans
-        for use in scan matching. Uses caching to avoid rebuilding
-        the same grid multiple times.
+        for use in scan matching.
 
         Returns
         -------
@@ -328,97 +412,9 @@ class GraphSlam:
         scan_ids = self._get_recent_scan_ids()
         if not scan_ids:
             return None
-        cache_key = tuple(scan_ids)
-        if self._seq_grid_cache and self._seq_grid_cache[0] == cache_key:
-            return self._seq_grid_cache[1]
         scans = [self._localized_scans[scan_id] for scan_id in scan_ids]
         grid = MultiResolutionGrid(0.1, 0.05, scans)
-        self._seq_grid_cache = (cache_key, grid)
         return grid
-
-    def _mark_submap_grid_dirty(self, submap_id: int):
-        """
-        Mark the occupancy grids of a submap as outdated.
-
-        Adds the submap ID to the dirty set, indicating that its
-        cached occupancy grid needs to be regenerated.
-
-        Parameters
-        ----------
-        submap_id : int
-            ID of the submap whose grid cache should be invalidated.
-
-        """
-        self._submap_grid_dirty.add(submap_id)
-
-    def _get_submap_grid(self, submap_id: int):
-        """
-        Return a cached or rebuilt grid for a given submap ID.
-
-        Retrieves the occupancy grid for a submap, rebuilding it
-        if the cache is marked as dirty.
-
-        Parameters
-        ----------
-        submap_id : int
-            ID of the submap whose grid to retrieve.
-
-        Returns
-        -------
-        MultiResolutionGrid
-            Multi-resolution occupancy grid for the specified submap.
-
-        """
-        if submap_id in self._submap_grids and submap_id not in self._submap_grid_dirty:
-            return self._submap_grids[submap_id]
-        scan_ids = self._submaps[submap_id].scan_ids
-        scans = [self._localized_scans[scan_id] for scan_id in scan_ids]
-        grid = MultiResolutionGrid(0.1, 0.05, scans)
-        self._submap_grids[submap_id] = grid
-        self._submap_grid_dirty.discard(submap_id)
-        return grid
-
-    def _ensure_submap_kd_tree(self):
-        """
-        Ensure KD-tree over submap positions exists and return it with data arrays.
-
-        Creates or updates a KD-tree for efficient spatial search over
-        submap positions. Used for loop closure detection.
-
-        Returns
-        -------
-        tuple or None
-            Tuple containing (kd_tree, positions, ids) if submaps exist,
-            None if loop closure is disabled or no submaps available.
-
-        Notes
-        -----
-        The KD-tree excludes the current submap to avoid self-matching
-        during loop closure detection.
-
-        """
-        if not self._enable_loop_closure:
-            return None
-        if self._submap_kd_tree_dirty:
-            positions = []
-            ids = []
-            for submap_id, submap in self._submaps.items():
-                if submap_id == self._current_submap_id:
-                    continue
-                positions.append(submap.pose[:2])
-                ids.append(submap_id)
-            if positions:
-                self._submap_positions = np.array(positions)
-                self._submap_ids = np.array(ids)
-                self._submap_kd_tree = cKDTree(self._submap_positions)
-            else:
-                self._submap_positions = None
-                self._submap_ids = None
-                self._submap_kd_tree = None
-            self._submap_kd_tree_dirty = False
-        if self._submap_kd_tree is None:
-            return None
-        return self._submap_kd_tree, self._submap_positions, self._submap_ids
 
     def _check_new_submap(self, current_pose: np.ndarray):
         """
@@ -448,32 +444,22 @@ class GraphSlam:
 
     def _optimize(self):
         """
-        Optimize the pose graph and update scans, submaps, and caches.
+        Optimize the pose graph and update scans and submaps.
 
         Performs pose graph optimization to correct accumulated drift
         and improve global consistency. Updates all poses based on
-        the optimized graph vertices and marks caches as dirty.
-
-        Notes
-        -----
-        This method updates:
-        1. All localized scan poses from optimized graph vertices
-        2. Submap poses using their first scan pose when available
-        3. Current pose to the latest scan's optimized pose
-        4. Marks all caches as dirty to force regeneration
+        the optimized graph vertices.
 
         """
         self._logger.info('Optimizing graph...')
-        self._graph = self._optimizer.optimize(self._graph)
+        self._optimizer.optimize(self._graph)
 
         vertices = self._graph.get_vertices()
 
-        # 1) Update all localized scan poses from optimized graph vertices
         for scan_id, loc_scan in self._localized_scans.items():
             if scan_id in vertices:
                 loc_scan.update(vertices[scan_id].pose)
 
-        # 2) Update submap poses using their first scan pose when available
         for submap_id, submap in self._submaps.items():
             first_scan_id = submap.first_scan_id
             if first_scan_id in vertices:
@@ -481,15 +467,9 @@ class GraphSlam:
             elif submap_id in vertices:
                 submap.pose = vertices[submap_id].pose
 
-        # 3) Set current pose to the latest scan's optimized pose if present
         last_scan_id = self._scan_id - 1
         if last_scan_id in vertices:
             self._current_pose = vertices[last_scan_id].pose
-
-        # Mark caches as dirty after optimization adjusts poses
-        self._submap_grid_dirty.update(self._submaps.keys())
-        self._submap_kd_tree_dirty = True
-        self._seq_grid_cache = None
 
         self._logger.info('Graph optimization completed')
 
@@ -509,16 +489,6 @@ class GraphSlam:
             Odometry pose [x, y, theta] in meters and radians.
             Used for movement threshold checking when enabled.
 
-        Notes
-        -----
-        The processing pipeline:
-        1. Initialize system with first scan if not already initialized
-        2. Match scan against recent scans using sequence matcher
-        3. Check movement threshold to skip processing if motion is small
-        4. Add scan to graph with odometry edge
-        5. Create new submap if distance threshold exceeded
-        6. Perform loop closure detection if enabled
-
         """
         if not self._is_initialized:
             # Initialize system with first scan at origin
@@ -533,25 +503,20 @@ class GraphSlam:
             self._current_submap = Submap(
                 self._current_submap_id, np.array([0.0, 0.0, 0.0]), self._scan_id
             )
-            self._graph.add_vertex(self._current_submap_id, np.array([0.0, 0.0, 0.0]))
+            self._graph.add_vertex(
+                self._current_submap_id, np.array([0.0, 0.0, 0.0])
+            )
             self._submaps[self._current_submap_id] = self._current_submap
-            self._mark_submap_grid_dirty(self._current_submap_id)
             self._record_recent_scan(localized_scan.scan_id)
 
             # Increment scan counter and return after initialization
             self._scan_id += 1
             return
 
-        # Check if the movement is too small
-        # Note: Movement threshold checking is currently disabled
-        # if self._enable_movement_threshold and self._enable_odom and \
-        #     self.check_movement_threshold(odom_pose):
-        #     return
-
         # Perform scan matching against recent scans
         initial_pose = self._current_pose.copy()
         grid = self._get_sequence_grid()
-        best_pose, score, _, seq_cov = self._seq_matcher.match(grid, scan, initial_pose)
+        best_pose, _, _, seq_cov = self._seq_matcher.match(grid, scan, initial_pose)
 
         # Check if movement is significant enough to process scan
         if (
@@ -564,7 +529,6 @@ class GraphSlam:
 
         # Add scan to trajectory and update current pose
         self._logger.info(f'Processing scan {self._scan_id}')
-        # Add localized scan to the trajectory
         localized_scan = LocalizedScan(self._scan_id, best_pose, scan)
         self._current_scan = localized_scan.get_localized_scan()
         self._localized_scans[self._scan_id] = localized_scan
@@ -588,101 +552,35 @@ class GraphSlam:
 
         # Create new submap if distance threshold exceeded
         if self._check_new_submap(self._current_pose):
-            # Perform loop closure detection before creating new submap
-            if self._enable_loop_closure:
-                self.loop_close()
+            # Run loop closure detection before creating new submap
+            self.loop_closure()
             # Initialize new submap
             self._current_submap_id += 1
             self._current_submap = Submap(
                 self._current_submap_id, self._current_pose, self._scan_id
             )
             self._submaps[self._current_submap_id] = self._current_submap
-            self._mark_submap_grid_dirty(self._current_submap_id)
-            self._submap_kd_tree_dirty = True
 
         else:
-            # Add scan to current submap and mark grid as dirty
+            # Add scan to current submap
             self._current_submap.add_scan_id(self._scan_id)
         self._scan_id += 1
 
-    def loop_close(self):
-        """
-        Search for loop closures around the current submap and update graph.
-
-        Performs loop closure detection by searching for nearby submaps
-        and attempting to match scans from the current submap against
-        them. Adds loop closure edges to the graph when successful
-        matches are found.
-
-        Notes
-        -----
-        Loop closure process:
-        1. Use KD-tree to find nearby submaps efficiently
-        2. For each nearby submap, try to match all scans in current submap
-        3. Add loop closure edge if match score exceeds threshold
-        4. Trigger graph optimization after adding loop closures
-
-        The method automatically triggers graph optimization after
-        processing all potential loop closures.
-
-        """
-        if len(self._submaps) <= 1:
+    def loop_closure(self):
+        """Run loop-closure detection asynchronously and optimize the graph."""
+        if not self._enable_loop_closure:
             return
 
-        # Use KD-tree for efficient spatial search over submap positions
-        kd_data = self._ensure_submap_kd_tree()
-        if kd_data is None:
-            self._logger.info('No submaps available for KD-tree')
-            return
-        kd, _, submap_ids = kd_data
-        current_xy = self._current_pose[:2]
+        submap_id = self._current_submap_id
+        pose = np.array(self._current_pose, copy=True)
+        self._loop_closure.add_submap_to_queue(pose, submap_id)
+        
+        # Optimize only if enough time has passed since last optimization
+        current_time = time.time()
+        if current_time - self._last_optimization_time >= self._optimization_interval:
+            self._optimize()
+            self._last_optimization_time = current_time
 
-        # Find nearby submaps within search radius
-        nearby_indices = kd.query_ball_point(
-            current_xy, r=self._loop_closure_search_distance
-        )
-        if len(nearby_indices) == 0:
-            self._logger.info('No nearby submaps found')
-            return
-        else:
-            self._logger.info(f'KD-tree submaps: {len(submap_ids)}')
-
-        # For each nearby candidate submap, match every scan in current submap
-        for idx in nearby_indices:
-            candidate_submap_id = int(submap_ids[idx])
-            grid = self._get_submap_grid(candidate_submap_id)
-            # Target to connect: first scan of the candidate submap
-            target_first_scan_id = self._submaps[candidate_submap_id].first_scan_id
-            target_first_scan_pose = self._localized_scans[target_first_scan_id].pose
-
-            # Iterate over all scans in current submap and attempt matching
-            for scan_id in self._current_submap.scan_ids:
-                original_scan = self._localized_scans[scan_id].get_original_scan()
-                initial_pose = self._localized_scans[scan_id].pose
-
-                # Attempt scan matching against candidate submap
-                matched_pose, score, _, loop_cov = self._loop_matcher.match(
-                    grid, original_scan, initial_pose
-                )
-
-                self._logger.info(
-                    f'Loop try: cand_submap={candidate_submap_id} '
-                    f'scan_id={scan_id} score={score}'
-                )
-
-                # Add loop closure edge if match score exceeds threshold
-                if score > self._loop_closure_score_threshold:
-                    # Calculate relative transform from matched scan to target scan
-                    relative_pose = get_relative_pose(
-                        matched_pose, target_first_scan_pose
-                    )
-
-                    # Add loop closure edge to graph
-                    self._graph.add_edge(
-                        scan_id,
-                        target_first_scan_id,
-                        relative_pose,
-                        loop_cov,
-                    )
-        # Trigger graph optimization after adding loop closures
-        self._optimize()
+    def shutdown(self):
+        """Clean stop background helpers such as loop-closure search."""
+        self._loop_closure.shutdown()

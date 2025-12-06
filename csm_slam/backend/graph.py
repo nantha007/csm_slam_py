@@ -27,6 +27,7 @@ Author: Nantha Kumar Sunder
 
 import gtsam
 import numpy as np
+import threading
 
 
 class Vertex:
@@ -266,6 +267,7 @@ class Graph:
         self._vertices = {}
         self._edges = {}
         self._edge_id = 0
+        self._lock = threading.Lock()
 
     #########################################################
     # Public methods                                        #
@@ -283,8 +285,8 @@ class Graph:
             Pose [x, y, theta] in meters and radians.
 
         """
-        # Create and store new vertex
-        self._vertices[vertex_id] = Vertex(vertex_id, pose)
+        with self._lock:
+            self._vertices[vertex_id] = Vertex(vertex_id, pose)
 
     def add_edge(
         self,
@@ -309,9 +311,9 @@ class Graph:
             If None, a default covariance matrix is used.
 
         """
-        # Create and store new edge with auto-generated ID
-        self._edges[self._edge_id] = Edge(self._edge_id, from_id, to_id, pose, cov)
-        self._edge_id += 1
+        with self._lock:
+            self._edges[self._edge_id] = Edge(self._edge_id, from_id, to_id, pose, cov)
+            self._edge_id += 1
 
     def get_edges(self) -> dict:
         """
@@ -323,7 +325,8 @@ class Graph:
             Dictionary mapping edge IDs to Edge objects.
 
         """
-        return self._edges
+        with self._lock:
+            return self._edges
 
     def get_vertices(self) -> dict:
         """
@@ -335,4 +338,20 @@ class Graph:
             Dictionary mapping vertex IDs to Vertex objects.
 
         """
-        return self._vertices
+        with self._lock:
+            return self._vertices
+
+    def update_vertex(self, vertex_id: int, pose: gtsam.Pose2) -> None:
+        """
+        Update the pose of a vertex.
+
+        Parameters
+        ----------
+        vertex_id : int
+            Unique identifier for the vertex.
+        pose : gtsam.Pose2
+            GTSAM Pose2 object representing the pose.
+
+        """
+        with self._lock:
+            self._vertices[vertex_id].from_pose2(pose)

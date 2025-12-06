@@ -13,13 +13,18 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for coarse-to-fine multi-resolution grid 2D correlative scan matching."""
+"""
+Tests for coarse-to-fine multi-resolution grid 2D correlative scan matching.
+
+Author: Nantha Kumar Sunder
+"""
+
 
 import numpy as np
 
-from csm_slam.core.grid import Grid, MultiResolutionGrid
-from csm_slam.core.localized_scan import LocalizedScan
-from csm_slam.core.scan_matcher import ScanMatcher
+from csm_slam.mapping.grid import Grid, MultiResolutionGrid
+from csm_slam.sensors.localized_scan import LocalizedScan
+from csm_slam.frontend.scan_matcher import ScanMatcher
 
 
 class TestScanMatcher:

@@ -32,7 +32,7 @@ load_settings()
 
 import gtsam  # noqa: E402
 
-from csm_slam.core.graph import Vertex, Edge, Graph  # noqa: E402
+from csm_slam.backend.graph import Vertex, Edge, Graph  # noqa: E402
 
 
 class TestVertex:

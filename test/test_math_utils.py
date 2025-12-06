@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for math and geometry helpers for 2D poses and scans."""
+"""
+Tests for math and geometry helpers for 2D poses and scans.
+
+Author: Nantha Kumar Sunder
+"""
 
 import os
 import sys
@@ -29,7 +33,7 @@ from test_helpers import load_settings  # noqa: E402
 
 load_settings()
 
-from csm_slam.core.math_utils import (  # noqa: E402
+from csm_slam.utils.math_utils import (  # noqa: E402
     get_relative_pose,
     matrix_to_pose,
     move_to_pose,
