@@ -64,7 +64,7 @@ _load_settings()
 
 from csm_slam.mapping.grid import Grid  # noqa: E402
 from .core.graph_slam import GraphSlam  # noqa: E402
-from . import ros_utils  # noqa: E402
+from .ros_utils import ros_utils  # noqa: E402
 
 
 class CSMSlamNode(Node):

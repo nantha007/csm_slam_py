@@ -76,21 +76,6 @@ class GraphSlam:
     """
 
     def __init__(self, logger, params):
-        """
-        Initialize the Graph-SLAM system.
-
-        Sets up the pose graph, optimizer, and all necessary data
-        structures for scan processing and map building.
-
-        Parameters
-        ----------
-        logger : logging.Logger
-            Logger instance for outputting messages.
-        params : dict
-            Configuration parameters including:
-            - example config is in config/csm_slam_params.yaml
-
-        """
         self._graph = Graph()
         self._optimizer = Optimizer()
         self._logger = logger
@@ -114,52 +99,52 @@ class GraphSlam:
         # Movement threshold configuration for scan processing
         self._movement_threshold = np.array(
             [
-                self._params['movement_threshold_distance'],
-                np.deg2rad(self._params['movement_threshold_angle']),
+                self._params["movement_threshold_distance"],
+                np.deg2rad(self._params["movement_threshold_angle"]),
             ]
         )
         # Algorithm configuration flags
-        self._seq_running_scans_len = self._params['sequence_queue_len']
+        self._seq_running_scans_len = self._params["sequence_queue_len"]
         self._enable_movement_threshold = True
         self._enable_odom = False
         self._enable_loop_closure = True
 
         # Initialize scan matchers for sequence and loop closure matching
         self._seq_matcher = ScanMatcher(
-            self._params['coarse_resolution'],
-            self._params['fine_resolution'],
+            self._params["coarse_resolution"],
+            self._params["fine_resolution"],
             [
-                self._params['sequence_match_distance'],
-                self._params['sequence_match_distance'],
-                np.deg2rad(self._params['sequence_match_angle']),
+                self._params["sequence_match_distance"],
+                self._params["sequence_match_distance"],
+                np.deg2rad(self._params["sequence_match_angle"]),
             ],
-            smear_factor=self._params['sequence_match_factor'],
+            smear_factor=self._params["sequence_match_factor"],
         )
         self._loop_matcher = ScanMatcher(
-            self._params['coarse_resolution'],
-            self._params['fine_resolution'],
+            self._params["coarse_resolution"],
+            self._params["fine_resolution"],
             [
-                self._params['loop_match_distance'],
-                self._params['loop_match_distance'],
-                np.deg2rad(self._params['loop_match_angle']),
+                self._params["loop_match_distance"],
+                self._params["loop_match_distance"],
+                np.deg2rad(self._params["loop_match_angle"]),
             ],
-            smear_factor=self._params['loop_match_factor'],
+            smear_factor=self._params["loop_match_factor"],
         )
-        self._submap_distance_threshold = self._params['submap_distance_threshold']
+        self._submap_distance_threshold = self._params["submap_distance_threshold"]
 
         # Loop closure detection parameters
         self._loop_closure_search_distance = self._params[
-            'loop_closure_search_distance'
+            "loop_closure_search_distance"
         ]
         self._loop_closure_score_threshold = self._params[
-            'loop_closure_score_threshold'
+            "loop_closure_score_threshold"
         ]
         # Performance optimization caches
         self._recent_scan_ids = deque(maxlen=self._seq_running_scans_len)
 
         # Optimization timing
         self._last_optimization_time = 0.0
-        self._optimization_interval = self._params.get('optimization_interval', 5.0)
+        self._optimization_interval = self._params.get("optimization_interval", 5.0)
 
         # Loop-closure helper for search and matching
         self._loop_closure = LoopClosure(
@@ -171,6 +156,10 @@ class GraphSlam:
             self._loop_closure_search_distance,
             self._loop_closure_score_threshold,
         )
+
+    #########################################################
+    # Properties                                            #
+    #########################################################
 
     @property
     def current_pose(self):
@@ -204,7 +193,7 @@ class GraphSlam:
 
         """
         scans = list(self._localized_scans.values())
-        return create_occupancy_grid(scans, self._params['fine_resolution'])
+        return create_occupancy_grid(scans, self._params["fine_resolution"])
 
     @property
     def poses(self):
@@ -234,113 +223,9 @@ class GraphSlam:
         poses_array = np.vstack(poses)
         return poses_array.T
 
-    def get_graph_edges(self):
-        """
-        Return absolute pose pairs for every edge currently in the graph.
-
-        Returns
-        -------
-        list of tuple
-            Each entry is ``(from_pose, to_pose)`` where pose is a 3-vector
-            ``[x, y, theta]`` describing the absolute pose of the vertex.
-
-        """
-        vertices = self._graph.get_vertices()
-        edges = list(self._graph.get_edges().values())
-        edge_pairs = []
-
-        for edge in edges:
-            from_vertex = vertices.get(edge.from_submap_id)
-            to_vertex = vertices.get(edge.to_submap_id)
-            if from_vertex is None or to_vertex is None:
-                continue
-            edge_pairs.append(
-                (
-                    np.array(from_vertex.pose, copy=True),
-                    np.array(to_vertex.pose, copy=True),
-                )
-            )
-
-        return edge_pairs
-
-    def get_graph(self) -> Graph:
-        """
-        Return the underlying pose graph object.
-
-        Returns
-        -------
-        Graph
-            Graph containing all vertices and edges.
-
-        """
-        return self._graph
-
-    def get_localized_scans(self):
-        """
-        Return a copy of the localized scans mapping keyed by scan_id.
-
-        Returns
-        -------
-        dict
-            Mapping of scan_id to LocalizedScan objects.
-
-        """
-        return dict(self._localized_scans)
-
-    def export_pose_graph(
-        self,
-        output_path: str = '',
-        bag_path: str | None = None,
-        extra_meta: dict | None = None,
-    ) -> str:
-        """
-        Export the pose graph and scans to an HDF5 `.pg` file.
-
-        Parameters
-        ----------
-        output_path : str, optional
-            Destination path. If empty, a default is chosen.
-        bag_path : str, optional
-            Bag path used to derive a default output name when output_path is empty.
-        extra_meta : dict, optional
-            Additional metadata to store in the file.
-
-        Returns
-        -------
-        str
-            Absolute path of the written file.
-
-        """
-        resolved_path = output_path
-        if not resolved_path:
-            if bag_path:
-                bag_dir = os.path.dirname(bag_path)
-                bag_base = os.path.splitext(os.path.basename(bag_path))[0]
-                resolved_path = os.path.join(bag_dir, f'{bag_base}_pose_graph.pg')
-            else:
-                resolved_path = 'pose_graph.pg'
-        elif not resolved_path.endswith('.pg'):
-            resolved_path = f'{resolved_path}.pg'
-
-        meta = {
-            'map_frame': self._params.get('map_frame_name', 'map'),
-            'base_link': self._params.get('base_link_name', 'base_link'),
-        }
-        if bag_path:
-            meta['bag_path'] = bag_path
-        if extra_meta:
-            meta.update(extra_meta)
-
-        try:
-            graph = self.get_graph()
-            scans = self.get_localized_scans().values()
-            save_pose_graph_hdf5(graph, scans, resolved_path, meta=meta)
-            self._logger.info(f'Saved pose graph to {resolved_path}')
-        except Exception as exc:
-            self._logger.error(f'Failed to save pose graph: {exc}')
-            raise
-
-        return os.path.abspath(resolved_path)
+    #########################################################
+    # Private methods                                       #
+    #########################################################
 
     def _check_movement_threshold(self, pose: np.ndarray):
         """
@@ -393,7 +278,7 @@ class GraphSlam:
         """
         if self._recent_scan_ids:
             return list(self._recent_scan_ids)
-        return list(self._localized_scans.keys())[-self._seq_running_scans_len:]
+        return list(self._localized_scans.keys())[-self._seq_running_scans_len :]
 
     def _get_sequence_grid(self):
         """
@@ -451,7 +336,7 @@ class GraphSlam:
         the optimized graph vertices.
 
         """
-        self._logger.info('Optimizing graph...')
+        self._logger.info("Optimizing graph...")
         self._optimizer.optimize(self._graph)
 
         vertices = self._graph.get_vertices()
@@ -471,7 +356,119 @@ class GraphSlam:
         if last_scan_id in vertices:
             self._current_pose = vertices[last_scan_id].pose
 
-        self._logger.info('Graph optimization completed')
+        self._logger.info("Graph optimization completed")
+
+    #########################################################
+    # Public methods                                        #
+    #########################################################
+
+    def export_pose_graph(
+        self,
+        output_path: str = "",
+        bag_path: str | None = None,
+        extra_meta: dict | None = None,
+    ) -> str:
+        """
+        Export the pose graph and scans to an HDF5 `.pg` file.
+
+        Parameters
+        ----------
+        output_path : str, optional
+            Destination path. If empty, a default is chosen.
+        bag_path : str, optional
+            Bag path used to derive a default output name when output_path is empty.
+        extra_meta : dict, optional
+            Additional metadata to store in the file.
+
+        Returns
+        -------
+        str
+            Absolute path of the written file.
+
+        """
+        resolved_path = output_path
+        if not resolved_path:
+            if bag_path:
+                bag_dir = os.path.dirname(bag_path)
+                bag_base = os.path.splitext(os.path.basename(bag_path))[0]
+                resolved_path = os.path.join(bag_dir, f"{bag_base}_pose_graph.pg")
+            else:
+                resolved_path = "pose_graph.pg"
+        elif not resolved_path.endswith(".pg"):
+            resolved_path = f"{resolved_path}.pg"
+
+        meta = {
+            "map_frame": self._params.get("map_frame_name", "map"),
+            "base_link": self._params.get("base_link_name", "base_link"),
+        }
+        if bag_path:
+            meta["bag_path"] = bag_path
+        if extra_meta:
+            meta.update(extra_meta)
+
+        try:
+            graph = self.get_graph()
+            scans = self.get_localized_scans().values()
+            save_pose_graph_hdf5(graph, scans, resolved_path, meta=meta)
+            self._logger.info(f"Saved pose graph to {resolved_path}")
+        except Exception as exc:
+            self._logger.error(f"Failed to save pose graph: {exc}")
+            raise
+
+        return os.path.abspath(resolved_path)
+
+    def get_graph_edges(self):
+        """
+        Return absolute pose pairs for every edge currently in the graph.
+
+        Returns
+        -------
+        list of tuple
+            Each entry is ``(from_pose, to_pose)`` where pose is a 3-vector
+            ``[x, y, theta]`` describing the absolute pose of the vertex.
+
+        """
+        vertices = self._graph.get_vertices()
+        edges = list(self._graph.get_edges().values())
+        edge_pairs = []
+
+        for edge in edges:
+            from_vertex = vertices.get(edge.from_submap_id)
+            to_vertex = vertices.get(edge.to_submap_id)
+            if from_vertex is None or to_vertex is None:
+                continue
+            edge_pairs.append(
+                (
+                    np.array(from_vertex.pose, copy=True),
+                    np.array(to_vertex.pose, copy=True),
+                )
+            )
+
+        return edge_pairs
+
+    def get_graph(self) -> Graph:
+        """
+        Return the underlying pose graph object.
+
+        Returns
+        -------
+        Graph
+            Graph containing all vertices and edges.
+
+        """
+        return self._graph
+
+    def get_localized_scans(self):
+        """
+        Return a copy of the localized scans mapping keyed by scan_id.
+
+        Returns
+        -------
+        dict
+            Mapping of scan_id to LocalizedScan objects.
+
+        """
+        return dict(self._localized_scans)
 
     def process_scan(self, scan: np.ndarray, odom_pose: np.ndarray = None):
         """
@@ -503,9 +500,7 @@ class GraphSlam:
             self._current_submap = Submap(
                 self._current_submap_id, np.array([0.0, 0.0, 0.0]), self._scan_id
             )
-            self._graph.add_vertex(
-                self._current_submap_id, np.array([0.0, 0.0, 0.0])
-            )
+            self._graph.add_vertex(self._current_submap_id, np.array([0.0, 0.0, 0.0]))
             self._submaps[self._current_submap_id] = self._current_submap
             self._record_recent_scan(localized_scan.scan_id)
 
@@ -528,7 +523,7 @@ class GraphSlam:
             return
 
         # Add scan to trajectory and update current pose
-        self._logger.info(f'Processing scan {self._scan_id}')
+        self._logger.info(f"Processing scan {self._scan_id}")
         localized_scan = LocalizedScan(self._scan_id, best_pose, scan)
         self._current_scan = localized_scan.get_localized_scan()
         self._localized_scans[self._scan_id] = localized_scan
@@ -574,7 +569,7 @@ class GraphSlam:
         submap_id = self._current_submap_id
         pose = np.array(self._current_pose, copy=True)
         self._loop_closure.add_submap_to_queue(pose, submap_id)
-        
+
         # Optimize only if enough time has passed since last optimization
         current_time = time.time()
         if current_time - self._last_optimization_time >= self._optimization_interval:
