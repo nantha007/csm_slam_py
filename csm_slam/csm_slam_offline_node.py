@@ -391,6 +391,7 @@ class CSMSlamNode(Node):
             if t.type in (
                 'sensor_msgs/msg/LaserScan',
                 'sensor_msgs/msg/MultiEchoLaserScan',
+                'nav_msgs/msg/Odometry',
             ):
                 try:
                     type_class_map[t.type] = get_message(t.type)
@@ -538,8 +539,10 @@ class CSMSlamNode(Node):
 
         self.get_logger().info(f'Finished processing {num_scans} scans')
         self._slam.loop_closure()
+        self._slam.wait_for_loop_closure(timeout=None)
+        self._slam.optimize()
         self._slam.shutdown()
-        self._slam.export_pose_graph(
+        self._slam.save_pose_graph(
             output_path=self._params.get('pose_graph_output_path', ''),
             bag_path=self._bag_path,
         )

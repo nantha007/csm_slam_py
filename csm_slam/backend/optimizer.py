@@ -153,11 +153,4 @@ class Optimizer:
             optimized_pose = result.atPose2(vertex_id)
             graph.update_vertex(vertex_id, optimized_pose)
 
-        # Update edge relative poses with optimized vertex poses
-        # for edge in graph.get_edges().values():
-        #     from_pose = result.atPose2(edge.from_submap_id)
-        #     to_pose = result.atPose2(edge.to_submap_id)
-        #     relative_opt = from_pose.between(to_pose)
-        #     edge.from_pose2(relative_opt)
-
         return graph

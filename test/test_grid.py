@@ -52,7 +52,7 @@ class TestMultiResolutionGrid:
         """Test multi-resolution grid initialization."""
         scan = np.array([[1.0, 2.0], [0.0, 1.0]])
         pose = np.array([0.0, 0.0, 0.0])
-        localized_scan = LocalizedScan(0, pose, scan, low_resolution=0.1, high_resolution=0.05)
+        localized_scan = LocalizedScan(0, pose, scan, coarse_resolution=0.1, fine_resolution=0.05)
 
         multi_grid = MultiResolutionGrid(0.1, 0.05, [localized_scan])
 
@@ -69,7 +69,7 @@ class TestCreateOccupancyGrid:
         """Test creating occupancy grid from localized scans."""
         scan = np.array([[1.0, 2.0], [0.0, 1.0]])
         pose = np.array([0.0, 0.0, 0.0])
-        localized_scan = LocalizedScan(0, pose, scan, low_resolution=0.1, high_resolution=0.05)
+        localized_scan = LocalizedScan(0, pose, scan, coarse_resolution=0.1, fine_resolution=0.05)
 
         grid = create_occupancy_grid([localized_scan], 0.1)
 
@@ -84,8 +84,8 @@ class TestCreateOccupancyGrid:
         scan1 = np.array([[1.0], [0.0]])
         scan2 = np.array([[2.0], [1.0]])
         pose = np.array([0.0, 0.0, 0.0])
-        localized_scan1 = LocalizedScan(0, pose, scan1, low_resolution=0.1, high_resolution=0.05)
-        localized_scan2 = LocalizedScan(1, pose, scan2, low_resolution=0.1, high_resolution=0.05)
+        localized_scan1 = LocalizedScan(0, pose, scan1, coarse_resolution=0.1, fine_resolution=0.05)
+        localized_scan2 = LocalizedScan(1, pose, scan2, coarse_resolution=0.1, fine_resolution=0.05)
 
         grid = create_occupancy_grid([localized_scan1, localized_scan2], 0.1)
 

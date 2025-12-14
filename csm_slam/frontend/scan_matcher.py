@@ -191,8 +191,8 @@ class ScanMatcher:
         na = theta_range.shape[0]
         scores3d = scores.reshape(nx, ny, na)
 
-        # Responses: normalize to [0,1]; invalid scores -> 0
-        xy_scores = np.max(scores3d, axis=2)  # max over angles per (x,y)
+        # Responses: normalize to [0,1]
+        xy_scores = np.max(scores3d, axis=2)
         xy_resp = np.clip(xy_scores / 100.0, 0.0, 1.0)
         xy_resp[~np.isfinite(xy_scores)] = 0.0
 

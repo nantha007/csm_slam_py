@@ -27,7 +27,8 @@ setup(
     entry_points={
         'console_scripts': [
             'csm_slam_node = csm_slam.csm_slam_online_node:main',
-            'csm_slam_offline_node = csm_slam.csm_slam_offline_node:main'
+            'csm_slam_offline_node = csm_slam.csm_slam_offline_node:main',
+            'localization_node = csm_slam.localization_node:main',
         ],
     },
 )

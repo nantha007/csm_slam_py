@@ -28,23 +28,23 @@ Author: Nantha Kumar Sunder
 """
 
 import os
-import time
 from collections import deque
 
 import numpy as np
 
 from csm_slam.backend.graph import Graph
+from csm_slam.backend.optimizer import Optimizer
 from csm_slam.core.loop_closure import LoopClosure
-from csm_slam.io.pg_export import save_pose_graph_hdf5
+from csm_slam.frontend.scan_matcher import ScanMatcher
+from csm_slam.io.pg_export import save_pose_graph_msgpack
+from csm_slam.io.pg_import import load_pose_graph_msgpack
 from csm_slam.mapping.grid import create_occupancy_grid, MultiResolutionGrid
+from csm_slam.mapping.submap import Submap
 from csm_slam.sensors.localized_scan import LocalizedScan
 from csm_slam.utils.math_utils import (
     get_relative_pose,
     movement_threshold,
 )
-from csm_slam.backend.optimizer import Optimizer
-from csm_slam.frontend.scan_matcher import ScanMatcher
-from csm_slam.mapping.submap import Submap
 
 
 class GraphSlam:
@@ -55,15 +55,6 @@ class GraphSlam:
     laser scan data to build a globally consistent map and trajectory.
     It manages scan matching, submap creation, loop closure detection,
     and pose graph optimization.
-
-    Attributes
-    ----------
-    current_pose : numpy.ndarray
-        Current robot pose as [x, y, theta] in meters and radians.
-    map : numpy.ndarray
-        Occupancy grid map built from all localized scans.
-    poses : numpy.ndarray
-        3xN array containing poses for all localized scans.
 
     Parameters
     ----------
@@ -96,6 +87,7 @@ class GraphSlam:
         self._scan_id = 1
         self._current_pose = np.array([0.0, 0.0, 0.0])
         self._last_odom_pose = np.array([0.0, 0.0, 0.0])
+
         # Movement threshold configuration for scan processing
         self._movement_threshold = np.array(
             [
@@ -103,11 +95,17 @@ class GraphSlam:
                 np.deg2rad(self._params["movement_threshold_angle"]),
             ]
         )
-        # Algorithm configuration flags
+
+        # Other slam parameters
         self._seq_running_scans_len = self._params["sequence_queue_len"]
         self._enable_movement_threshold = True
         self._enable_odom = False
         self._enable_loop_closure = True
+
+        # Localization mode parameters
+        self._localization_mode = False
+        self._build_map = False
+        self._num_of_submaps = 3
 
         # Initialize scan matchers for sequence and loop closure matching
         self._seq_matcher = ScanMatcher(
@@ -172,9 +170,7 @@ class GraphSlam:
             Current pose as [x, y, theta] in meters and radians.
 
         """
-        return np.array(
-            [self._current_pose[0], self._current_pose[1], self._current_pose[2]]
-        )
+        return self._current_pose
 
     @property
     def occupancy_map(self):
@@ -327,49 +323,18 @@ class GraphSlam:
             return True
         return False
 
-    def _optimize(self):
-        """
-        Optimize the pose graph and update scans and submaps.
-
-        Performs pose graph optimization to correct accumulated drift
-        and improve global consistency. Updates all poses based on
-        the optimized graph vertices.
-
-        """
-        self._logger.info("Optimizing graph...")
-        self._optimizer.optimize(self._graph)
-
-        vertices = self._graph.get_vertices()
-
-        for scan_id, loc_scan in self._localized_scans.items():
-            if scan_id in vertices:
-                loc_scan.update(vertices[scan_id].pose)
-
-        for submap_id, submap in self._submaps.items():
-            first_scan_id = submap.first_scan_id
-            if first_scan_id in vertices:
-                submap.pose = vertices[first_scan_id].pose
-            elif submap_id in vertices:
-                submap.pose = vertices[submap_id].pose
-
-        last_scan_id = self._scan_id - 1
-        if last_scan_id in vertices:
-            self._current_pose = vertices[last_scan_id].pose
-
-        self._logger.info("Graph optimization completed")
-
     #########################################################
     # Public methods                                        #
     #########################################################
 
-    def export_pose_graph(
+    def save_pose_graph(
         self,
         output_path: str = "",
         bag_path: str | None = None,
         extra_meta: dict | None = None,
     ) -> str:
         """
-        Export the pose graph and scans to an HDF5 `.pg` file.
+        Export the pose graph and scans to a MessagePack `.pg` file.
 
         Parameters
         ----------
@@ -378,7 +343,8 @@ class GraphSlam:
         bag_path : str, optional
             Bag path used to derive a default output name when output_path is empty.
         extra_meta : dict, optional
-            Additional metadata to store in the file.
+            Additional metadata to store in the file. Submaps from the current
+            SLAM state are exported automatically.
 
         Returns
         -------
@@ -408,14 +374,66 @@ class GraphSlam:
 
         try:
             graph = self.get_graph()
-            scans = self.get_localized_scans().values()
-            save_pose_graph_hdf5(graph, scans, resolved_path, meta=meta)
+            scans = self.get_localized_scans()
+            save_pose_graph_msgpack(
+                graph, scans, self._submaps, resolved_path, meta=meta
+            )
             self._logger.info(f"Saved pose graph to {resolved_path}")
         except Exception as exc:
             self._logger.error(f"Failed to save pose graph: {exc}")
             raise
 
         return os.path.abspath(resolved_path)
+
+    def load_pose_graph(self, file_path: str):
+        """
+        Load a pose graph, scans, and submaps from a MessagePack `.pg` file.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the pose graph file to load.
+
+        """
+        try:
+            graph, scans, submaps, _ = load_pose_graph_msgpack(file_path)
+            if graph is None or scans is None or submaps is None:
+                raise ValueError("Pose graph file did not contain graph or scans")
+
+            self._graph = graph
+            self._localized_scans = scans
+            self._submaps = submaps
+
+            # Update internal counters and current references
+            scan_ids = sorted(self._localized_scans.keys())
+            if scan_ids:
+                last_scan_id = scan_ids[-1]
+                self._current_pose = np.array(
+                    self._localized_scans[last_scan_id].pose, copy=True
+                )
+                self._current_scan = self._localized_scans[
+                    last_scan_id
+                ].get_localized_scan()
+                self._scan_id = last_scan_id + 1
+                recent_ids = scan_ids[-self._seq_running_scans_len :]
+                self._recent_scan_ids = deque(
+                    recent_ids, maxlen=self._seq_running_scans_len
+                )
+            else:
+                self._current_pose = np.array([0.0, 0.0, 0.0])
+                self._current_scan = None
+                self._scan_id = 1
+                self._recent_scan_ids = deque(maxlen=self._seq_running_scans_len)
+
+            self._current_submap_id = max(self._submaps.keys())
+            self._current_submap = self._submaps[self._current_submap_id]
+
+            self._last_odom_pose = np.array(self._current_pose, copy=True)
+            self._is_initialized = True
+            self._logger.info(f"Loaded pose graph from {file_path}")
+        except Exception as exc:
+            self._logger.error(f"Failed to load pose graph from {file_path}: {exc}")
+            raise
 
     def get_graph_edges(self):
         """
@@ -566,15 +584,58 @@ class GraphSlam:
         if not self._enable_loop_closure:
             return
 
-        submap_id = self._current_submap_id
-        pose = np.array(self._current_pose, copy=True)
-        self._loop_closure.add_submap_to_queue(pose, submap_id)
+        self._loop_closure.add_submap_to_queue(self._current_pose.copy(), self._current_submap_id)
+        self.optimize()
 
-        # Optimize only if enough time has passed since last optimization
-        current_time = time.time()
-        if current_time - self._last_optimization_time >= self._optimization_interval:
-            self._optimize()
-            self._last_optimization_time = current_time
+    def wait_for_loop_closure(self, timeout: float | None = 10.0) -> bool:
+        """
+        Wait for the loop-closure worker to finish processing queued submaps.
+
+        Parameters
+        ----------
+        timeout : float | None, optional
+            Maximum time to wait.
+
+        Returns
+        -------
+        bool
+            True if the queue emptied before the timeout, False otherwise.
+
+        """
+        if not self._enable_loop_closure:
+            self._logger.info("Loop closure disabled; skipping wait.")
+            return True
+
+        finished = self._loop_closure.wait_for_completion(timeout=timeout)
+        if finished:
+            self._logger.info("Loop closure queue drained.")
+        else:
+            self._logger.warning("Loop closure wait timed out.")
+        return finished
+
+    def optimize(self):
+        """Optimize the pose graph and update scans and submaps."""
+        self._logger.info("Optimizing graph...")
+        self._optimizer.optimize(self._graph)
+
+        vertices = self._graph.get_vertices()
+
+        for scan_id, loc_scan in self._localized_scans.items():
+            if scan_id in vertices:
+                loc_scan.update(vertices[scan_id].pose)
+
+        for submap_id, submap in self._submaps.items():
+            first_scan_id = submap.first_scan_id
+            if first_scan_id in vertices:
+                submap.pose = vertices[first_scan_id].pose
+            elif submap_id in vertices:
+                submap.pose = vertices[submap_id].pose
+
+        last_scan_id = self._scan_id - 1
+        if last_scan_id in vertices:
+            self._current_pose = vertices[last_scan_id].pose
+
+        self._logger.info("Graph optimization completed")
 
     def shutdown(self):
         """Clean stop background helpers such as loop-closure search."""

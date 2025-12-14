@@ -9,6 +9,7 @@ csm_slam_node:
     sequence_queue_len: 100
     skip_scan_interval: 2
 
+    # Map building parameters
     fine_resolution: 0.05
     coarse_resolution: 0.1
 
@@ -30,7 +31,7 @@ csm_slam_node:
     lidar_topic: "horizontal_laser_2d"
 
     # Subscribe topic type
-    # lidar_type: "MultiEchoLaserScan"
+    # lidar_type: "MultiEchoLaserScan" or "LaserScan"
     lidar_type: "LaserScan"
 
     # sequence scan matcher parameters

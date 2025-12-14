@@ -26,11 +26,12 @@ import numpy as np
 
 from geometry_msgs.msg import Point, PoseStamped, TransformStamped
 from nav_msgs.msg import MapMetaData, OccupancyGrid, Path
+from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
 from visualization_msgs.msg import Marker
 
-from csm_slam.mapping.grid import Grid
+from csm_slam.mapping.grid import Grid, CellValue
 
 #########################################################
 # Public functions                                      #
@@ -115,7 +116,7 @@ def graph_edges_to_marker(
     marker = Marker()
     marker.header.frame_id = frame_id
     marker.header.stamp = stamp.to_msg()
-    marker.ns = 'slam_edges'
+    marker.ns = "slam_edges"
     marker.id = 0
     marker.type = Marker.LINE_LIST
     marker.action = Marker.ADD
@@ -179,15 +180,16 @@ def grid_to_occ_grid(
 
     occ_grid = OccupancyGrid()
     occ_grid.info = meta_data
-    unknown = grid.grid == 128
-    occupied = grid.grid == 0
-    free = grid.grid == 255
-    grid.grid = grid.grid.astype(np.int8)
-    grid.grid[unknown] = -1
-    grid.grid[occupied] = 100
-    grid.grid[free] = 0
-    grid_ros = np.flipud(grid.grid)
-    occ_grid.data = grid_ros.flatten(order='C').tolist()
+    data = grid.grid.copy()
+    unknown = data == CellValue.UNKNOWN.value
+    occupied = data == CellValue.OCCUPIED.value
+    free = data == CellValue.FREE.value
+    data = data.astype(np.int8)
+    data[unknown] = -1
+    data[occupied] = 100
+    data[free] = 0
+    grid_ros = np.flipud(data)
+    occ_grid.data = grid_ros.flatten(order="C").tolist()
     occ_grid.header.stamp = stamp.to_msg()
     occ_grid.header.frame_id = frame_id
     return occ_grid
@@ -215,8 +217,8 @@ def laser_to_cart(msg: LaserScan) -> np.ndarray:
     angles = msg.angle_min + np.arange(n, dtype=np.float32) * msg.angle_increment
 
     # Validity mask
-    rmin = max(0.05, float(getattr(msg, 'range_min', 0.0)))
-    rmax = float(getattr(msg, 'range_max', 20.0))
+    rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
+    rmax = float(getattr(msg, "range_max", 20.0))
     mask = np.isfinite(ranges)
     mask &= ranges >= rmin
     mask &= ranges <= min(rmax, 20.0)
@@ -248,7 +250,7 @@ def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
 
     ranges_list = []
     for i in range(num):
-        echoes = getattr(msg.ranges[i], 'echoes', [])
+        echoes = getattr(msg.ranges[i], "echoes", [])
         arr = np.array(echoes, dtype=np.float32)
         arr = arr[np.isfinite(arr)]
         arr = arr[arr > 0.0]
@@ -257,8 +259,8 @@ def multi_echo_to_cart(msg: MultiEchoLaserScan) -> np.ndarray:
     ranges = np.array(ranges_list, dtype=np.float32)
     angles = msg.angle_min + np.arange(num, dtype=np.float32) * msg.angle_increment
 
-    rmin = max(0.05, float(getattr(msg, 'range_min', 0.0)))
-    rmax = float(getattr(msg, 'range_max', 20.0))
+    rmin = max(0.05, float(getattr(msg, "range_min", 0.0)))
+    rmax = float(getattr(msg, "range_max", 20.0))
     mask = np.isfinite(ranges)
     mask &= ranges >= rmin
     mask &= ranges <= min(rmax, 20.0)
@@ -330,3 +332,42 @@ def theta_to_quaternion(theta: float) -> list:
     z = np.sin(theta / 2.0)
     w = np.cos(theta / 2.0)
     return [z, w]
+
+
+def quaternion_to_theta(z: float, w: float) -> float:
+    """
+    Convert quaternion to angle.
+
+    Parameters
+    ----------
+    z : float
+        Z component of the quaternion.
+    w : float
+        W component of the quaternion.
+
+    Returns
+    -------
+    float
+        Angle in radians.
+    
+    """
+    return 2.0 * np.arctan2(z, w)
+
+
+def initial_pose_to_numpy(msg: PoseWithCovarianceStamped) -> np.ndarray:
+    """
+    Convert initial pose message to numpy array.
+
+    Parameters
+    ----------
+    msg : PoseWithCovarianceStamped
+        ROS2 PoseWithCovarianceStamped message.
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape (3,) representing [x, y, theta] in meters and radians.
+
+    """
+    theta = quaternion_to_theta(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)
+    return np.array([msg.pose.pose.position.x, msg.pose.pose.position.y, theta])

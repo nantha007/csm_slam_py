@@ -74,7 +74,7 @@ class TestScanMatcher:
         # Create a simple scan
         scan = np.array([[1.0, 2.0], [0.0, 1.0]])
         pose = np.array([0.0, 0.0, 0.0])
-        localized_scan = LocalizedScan(0, pose, scan, low_resolution=0.1, high_resolution=0.05)
+        localized_scan = LocalizedScan(0, pose, scan, coarse_resolution=0.1, fine_resolution=0.05)
 
         # Create multi-resolution grid
         multi_grid = MultiResolutionGrid(0.1, 0.05, [localized_scan])
@@ -98,7 +98,7 @@ class TestScanMatcher:
         """Test scan matching with initial pose offset."""
         scan = np.array([[1.0], [0.0]])
         pose = np.array([0.0, 0.0, 0.0])
-        localized_scan = LocalizedScan(0, pose, scan, low_resolution=0.1, high_resolution=0.05)
+        localized_scan = LocalizedScan(0, pose, scan, coarse_resolution=0.1, fine_resolution=0.05)
 
         multi_grid = MultiResolutionGrid(0.1, 0.05, [localized_scan])
         search_window = np.array([0.5, 0.5, 0.2])

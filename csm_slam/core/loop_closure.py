@@ -76,14 +76,12 @@ class LoopClosure:
         self._search_thread = threading.Thread(target=self._search_and_match_loop)
         self._submap_queue_lock = threading.Lock()
         self._submap_queue = queue.Queue()
+        self._processing_lock = threading.Lock()
+        self._processing_count = 0
         self._search_thread.start()
 
     def __del__(self):
-        try:
-            self.shutdown()
-        except Exception:
-            # Avoid raising during garbage collection
-            pass
+        self.shutdown()
 
     #########################################################
     # Private methods                                       #
@@ -129,7 +127,8 @@ class LoopClosure:
         positions = []
         ids = []
         for submap_id, submap in self._submaps.items():
-            if submap_id == current_submap_id:
+            # Using older submaps for loop-closure detection
+            if submap_id >= current_submap_id:
                 continue
             positions.append(submap.pose[:2])
             ids.append(submap_id)
@@ -150,7 +149,13 @@ class LoopClosure:
                 continue
             with self._submap_queue_lock:
                 pose, submap_id = self._submap_queue.get(0)
-            self._search_and_match(pose, submap_id)
+            with self._processing_lock:
+                self._processing_count += 1
+            try:
+                self._search_and_match(pose, submap_id)
+            finally:
+                with self._processing_lock:
+                    self._processing_count -= 1
 
     def _search_and_match(
         self, current_pose: np.ndarray, current_submap_id: int
@@ -183,6 +188,9 @@ class LoopClosure:
         else:
             self._logger.info(f"KD-tree submaps: {len(submap_ids)}")
 
+        accepted_count = 0
+        max_accepted = 10
+
         for idx in nearby_indices:
             candidate_submap_id = int(submap_ids[idx])
             grid = self._get_submap_grid(candidate_submap_id)
@@ -212,6 +220,9 @@ class LoopClosure:
                         relative_pose,
                         loop_cov,
                     )
+                    accepted_count += 1
+                    if accepted_count >= max_accepted:
+                        return
 
     #########################################################
     # Public methods                                        #
@@ -239,3 +250,29 @@ class LoopClosure:
             self._submap_queue.put((None, None))
         if self._search_thread.is_alive():
             self._search_thread.join(timeout=1.0)
+
+    def wait_for_completion(self, timeout: float | None = 10.0) -> bool:
+        """
+        Wait until all queued submaps are processed and no search is running.
+
+        Parameters
+        ----------
+        timeout : float | None, optional
+            Maximum time to wait in seconds. If None, waits indefinitely.
+
+        Returns
+        -------
+        bool
+            True if completion occurred before the timeout, False otherwise.
+
+        """
+        deadline = time.time() + timeout if timeout is not None else None
+        while True:
+            queue_empty = self._submap_queue.empty()
+            with self._processing_lock:
+                running = self._processing_count > 0
+            if queue_empty and not running:
+                return True
+            if deadline is not None and time.time() >= deadline:
+                return False
+            time.sleep(0.01)

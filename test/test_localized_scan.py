@@ -69,7 +69,7 @@ class TestLocalizedScan:
         scan = np.array([[1.0, 2.0], [0.0, 1.0]])
         pose = np.array([0.0, 0.0, 0.0])
         localized_scan = LocalizedScan(
-            0, pose, scan, low_resolution=0.1, high_resolution=0.05
+            0, pose, scan, coarse_resolution=0.1, fine_resolution=0.05
         )
 
         free_maps = localized_scan.free_space_maps

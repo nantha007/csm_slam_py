@@ -18,7 +18,6 @@
 import os
 import sys
 
-import pytest
 import numpy as np
 
 # Add test directory to path to allow importing test_helpers

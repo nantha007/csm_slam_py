@@ -66,18 +66,11 @@ class MultiResolutionGrid:
     This class maintains two occupancy grids at different
     resolutions from a list of localized scans.
 
-    Attributes
-    ----------
-    coarse_grid : Grid
-        Coarse resolution occupancy grid.
-    fine_grid : Grid
-        Fine resolution occupancy grid.
-
     Parameters
     ----------
-    low_resolution : float
+    coarse_resolution : float
         Resolution for the coarse occupancy grid in meters.
-    high_resolution : float
+    fine_resolution : float
         Resolution for the fine occupancy grid in meters.
     localized_scans : List[LocalizedScan]
         List of LocalizedScan objects providing free/occupied points.
@@ -86,8 +79,8 @@ class MultiResolutionGrid:
 
     def __init__(
         self,
-        low_resolution: float,
-        high_resolution: float,
+        coarse_resolution: float,
+        fine_resolution: float,
         localized_scans: List[LocalizedScan],
     ):
         """
@@ -95,20 +88,20 @@ class MultiResolutionGrid:
 
         Parameters
         ----------
-        low_resolution : float
+        coarse_resolution : float
             Resolution for the coarse occupancy grid in meters.
-        high_resolution : float
+        fine_resolution : float
             Resolution for the fine occupancy grid in meters.
         localized_scans : List[LocalizedScan]
             List of LocalizedScan objects providing free/occupied points.
 
         """
-        self._low_resolution = low_resolution
-        self._high_resolution = high_resolution
+        self._coarse_resolution = coarse_resolution
+        self._fine_resolution = fine_resolution
         self._localized_scans = localized_scans
 
-        self.coarse_grid = create_occupancy_grid(localized_scans, low_resolution)
-        self.fine_grid = create_occupancy_grid(localized_scans, high_resolution)
+        self.coarse_grid = create_occupancy_grid(localized_scans, coarse_resolution)
+        self.fine_grid = create_occupancy_grid(localized_scans, fine_resolution)
 
 
 #########################################################

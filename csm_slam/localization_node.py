@@ -14,12 +14,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-CSM SLAM online processing node for real-time SLAM.
+CSM SLAM localization node for real-time localization.
 
-This module provides an online SLAM processing node that subscribes to laser scan
-and odometry data from ROS2 topics and processes them using the CSM SLAM algorithm.
-It supports both LaserScan and MultiEchoLaserScan message types and publishes the
-resulting map, trajectory, and odometry data in real-time.
+This module provides a localization node that subscribes to laser scan
+and initial pose data from ROS2 topics and processes them using the CSM
+localization algorithm. It supports both LaserScan and MultiEchoLaserScan
+message types and publishes the resulting map, odometry, and transform data
+in real-time.
 
 Author: Nantha Kumar Sunder
 """
@@ -34,12 +35,10 @@ import yaml
 
 import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from nav_msgs.msg import OccupancyGrid, Odometry, Path
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, MultiEchoLaserScan
-from std_srvs.srv import Trigger
 from tf2_ros import TransformBroadcaster
-from visualization_msgs.msg import Marker
 
 
 def _load_settings():
@@ -64,47 +63,46 @@ def _load_settings():
 _load_settings()
 
 from csm_slam.mapping.grid import Grid  # noqa: E402
-from .core.graph_slam import GraphSlam  # noqa: E402
+from .core.localization import Localization  # noqa: E402
 from .ros_utils import ros_utils  # noqa: E402
 
 
-class CSMSlamNode(Node):
+class CSMLocalizationNode(Node):
     """
-    CSM SLAM online processing node for real-time SLAM.
+    CSM SLAM localization node for real-time localization.
 
-    This node subscribes to laser scan and odometry data from ROS2 topics and
-    processes them using the CSM SLAM algorithm. It supports both LaserScan and
-    MultiEchoLaserScan message types and publishes the resulting map, trajectory,
-    and odometry data in real-time.
+    This node subscribes to laser scan and initial pose data from ROS2 topics
+    and processes them using the CSM localization algorithm. It supports both
+    LaserScan and MultiEchoLaserScan message types and publishes the resulting
+    map, odometry, and transform data in real-time.
 
     """
 
     def __init__(self):
         # Initialize ROS2 node
-        super().__init__("csm_slam_node")
+        super().__init__("csm_localization_node")
         self._params = {}
         self._initialize()
 
-        self._skip_scan_interval = max(
-            1, int(self._params.get("skip_scan_interval", 1))
-        )
-        self._scan_counter = 0
+        # Localization system
+        self._localization = Localization(self.get_logger(), self._params)
+        # Cache occupancy grid once after localization is initialized to avoid
+        # repeatedly recreating it on the publishing thread.
+        self._map_grid = None
 
-        # SLAM trajectory
-        self._slam = GraphSlam(self.get_logger(), self._params)
-
-        # Load pose graph if running in localization mode
-        if self._params.get("localization_mode") and self._params.get(
-            "pose_graph_input_path"
-        ):
-            pg_path = os.path.expanduser(self._params["pose_graph_input_path"])
-            try:
-                self._slam.load_pose_graph(pg_path)
-                self.get_logger().info(f"Loaded pose graph from {pg_path}")
-            except Exception as exc:
-                self.get_logger().error(
-                    f"Failed to load pose graph from {pg_path}: {exc}"
-                )
+        # Load pose graph (required for localization)
+        if self._params.get("pose_graph_input_path"):
+            pg_path = self._params["pose_graph_input_path"]
+            self.get_logger().info(f"Loading pose graph from {pg_path}")
+            self._localization.load_pose_graph(pg_path)
+            self.get_logger().info(f"Loaded pose graph from {pg_path}")
+            self._map_grid = self._localization.occupancy_map
+            if self._map_grid is None:
+                self.get_logger().error("Failed to initialize occupancy grid")
+                raise ValueError("Occupancy grid not available after loading pose graph")
+        else:
+            self.get_logger().error("Pose graph input path is not set")
+            raise ValueError("Pose graph input path is not set")
 
         # Publishers
         self._map_publisher = self.create_publisher(
@@ -113,17 +111,13 @@ class CSMSlamNode(Node):
         self._odom_publisher = self.create_publisher(
             Odometry, self._params["pub_odom_topic"], 10
         )
-        self._trajectory_publisher = self.create_publisher(Path, "/slam_trajectory", 10)
-        self._edges_publisher = self.create_publisher(Marker, "/slam_edges", 10)
 
         # Transform broadcaster
         self._tf_broadcaster = TransformBroadcaster(self)
 
         # Data storage for latest messages
         self._latest_scan = None
-        self._latest_odom = None
         self._scan_lock = threading.Lock()
-        self._odom_lock = threading.Lock()
 
         # Shutdown flag for graceful termination
         self._shutdown_requested = False
@@ -135,12 +129,6 @@ class CSMSlamNode(Node):
         # Create subscribers
         self._create_subscribers()
 
-        # Create service for saving pose graph
-        self._save_graph_service = self.create_service(
-            Trigger, "save_pose_graph", self._save_pose_graph_callback
-        )
-        self.get_logger().info('Service "save_pose_graph" is ready')
-
         # Start publishing thread
         self._start_publish_thread()
 
@@ -150,23 +138,12 @@ class CSMSlamNode(Node):
 
     def _initialize(self):
         """
-        Initialize ROS2 parameters and SLAM algorithm.
+        Initialize ROS2 parameters and localization algorithm.
 
         Declares all ROS2 parameters, builds the parameter dictionary,
-        initializes the SLAM algorithm, and creates publishers.
+        and initializes the localization algorithm.
 
         """
-        # Parameters (removed bag_path for online operation)
-
-        # SLAM parameters
-        self.declare_parameter("enable_movement_threshold", True)
-        self.declare_parameter("enable_odom", False)
-        self.declare_parameter("enable_loop_closure", True)
-        self.declare_parameter("movement_threshold_distance", 0.2)
-        self.declare_parameter("movement_threshold_angle", 15)
-        self.declare_parameter("sequence_queue_len", 100)
-        self.declare_parameter("skip_scan_interval", 1)
-
         # Grid resolution parameters
         self.declare_parameter("fine_resolution", 0.05)
         self.declare_parameter("coarse_resolution", 0.1)
@@ -174,7 +151,6 @@ class CSMSlamNode(Node):
         # Publish topic parameters
         self.declare_parameter("map_topic", "/map")
         self.declare_parameter("pub_odom_topic", "/slam_odom")
-        self.declare_parameter("pose_graph_output_path", "")
 
         # Transform parameters
         self.declare_parameter("base_link_name", "base_link")
@@ -187,57 +163,21 @@ class CSMSlamNode(Node):
         self.declare_parameter("publish_frequency", 10.0)
 
         # Subscribe topic parameters
-        self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("lidar_topic", "/lidar")
+        self.declare_parameter("initial_pose_topic", "initialpose")
 
         # Subscribe topic type parameters
         self.declare_parameter("lidar_type", "LaserScan")
 
         # Localization parameters
-        self.declare_parameter("localization_mode", False)
-        self.declare_parameter("build_map", True)
         self.declare_parameter("pose_graph_input_path", "")
-        self.declare_parameter("initial_pose_topic", "initialpose")
 
-        # Sequence scan matcher parameters
-        self.declare_parameter("sequence_match_distance", 0.3)
-        self.declare_parameter("sequence_match_angle", 45)
-        self.declare_parameter("sequence_match_factor", 10)
-
-        # Loop scan matcher parameters
-        self.declare_parameter("loop_match_distance", 4.0)
-        self.declare_parameter("loop_match_angle", 45)
-        self.declare_parameter("loop_match_factor", 10)
-
-        # Slam parameters
-        self.declare_parameter("submap_distance_threshold", 6.0)
-        self.declare_parameter("loop_closure_search_distance", 10.0)
-        self.declare_parameter("loop_closure_score_threshold", 85.0)
+        # Scan to map matching parameters for localization
+        self.declare_parameter("search_distance", 0.2)
+        self.declare_parameter("search_angle", 15)
+        self.declare_parameter("search_factor", 5)
 
         self._params = {
-            "enable_movement_threshold": self.get_parameter("enable_movement_threshold")
-            .get_parameter_value()
-            .bool_value,
-            "enable_odom": self.get_parameter("enable_odom")
-            .get_parameter_value()
-            .bool_value,
-            "enable_loop_closure": self.get_parameter("enable_loop_closure")
-            .get_parameter_value()
-            .bool_value,
-            "movement_threshold_distance": self.get_parameter(
-                "movement_threshold_distance"
-            )
-            .get_parameter_value()
-            .double_value,
-            "movement_threshold_angle": self.get_parameter("movement_threshold_angle")
-            .get_parameter_value()
-            .integer_value,
-            "sequence_queue_len": self.get_parameter("sequence_queue_len")
-            .get_parameter_value()
-            .integer_value,
-            "skip_scan_interval": self.get_parameter("skip_scan_interval")
-            .get_parameter_value()
-            .integer_value,
             "fine_resolution": self.get_parameter("fine_resolution")
             .get_parameter_value()
             .double_value,
@@ -248,18 +188,6 @@ class CSMSlamNode(Node):
             .get_parameter_value()
             .string_value,
             "pub_odom_topic": self.get_parameter("pub_odom_topic")
-            .get_parameter_value()
-            .string_value,
-            "pose_graph_output_path": self.get_parameter("pose_graph_output_path")
-            .get_parameter_value()
-            .string_value,
-            "localization_mode": self.get_parameter("localization_mode")
-            .get_parameter_value()
-            .bool_value,
-            "build_map": self.get_parameter("build_map")
-            .get_parameter_value()
-            .bool_value,
-            "pose_graph_input_path": self.get_parameter("pose_graph_input_path")
             .get_parameter_value()
             .string_value,
             "base_link_name": self.get_parameter("base_link_name")
@@ -282,9 +210,6 @@ class CSMSlamNode(Node):
             "publish_frequency": self.get_parameter("publish_frequency")
             .get_parameter_value()
             .double_value,
-            "odom_topic": self.get_parameter("odom_topic")
-            .get_parameter_value()
-            .string_value,
             "lidar_topic": self.get_parameter("lidar_topic")
             .get_parameter_value()
             .string_value,
@@ -294,62 +219,22 @@ class CSMSlamNode(Node):
             "initial_pose_topic": self.get_parameter("initial_pose_topic")
             .get_parameter_value()
             .string_value,
-            "sequence_match_distance": self.get_parameter("sequence_match_distance")
+            "pose_graph_input_path": self.get_parameter("pose_graph_input_path")
+            .get_parameter_value()
+            .string_value,
+            "search_distance": self.get_parameter("search_distance")
             .get_parameter_value()
             .double_value,
-            "sequence_match_angle": self.get_parameter("sequence_match_angle")
+            "search_angle": self.get_parameter("search_angle")
             .get_parameter_value()
             .integer_value,
-            "sequence_match_factor": self.get_parameter("sequence_match_factor")
+            "search_factor": self.get_parameter("search_factor")
             .get_parameter_value()
             .integer_value,
-            "loop_match_distance": self.get_parameter("loop_match_distance")
-            .get_parameter_value()
-            .double_value,
-            "loop_match_angle": self.get_parameter("loop_match_angle")
-            .get_parameter_value()
-            .integer_value,
-            "loop_match_factor": self.get_parameter("loop_match_factor")
-            .get_parameter_value()
-            .integer_value,
-            "submap_distance_threshold": self.get_parameter("submap_distance_threshold")
-            .get_parameter_value()
-            .double_value,
-            "loop_closure_search_distance": self.get_parameter(
-                "loop_closure_search_distance"
-            )
-            .get_parameter_value()
-            .double_value,
-            "loop_closure_score_threshold": self.get_parameter(
-                "loop_closure_score_threshold"
-            )
-            .get_parameter_value()
-            .double_value,
         }
 
         # Get and log all parameters
-        self.get_logger().info("=== CSM SLAM Parameters ===")
-        self.get_logger().info("SLAM parameters:")
-        self.get_logger().info(
-            f"  enable_movement_threshold: {self._params['enable_movement_threshold']}"
-        )
-        self.get_logger().info(f"  enable_odom: {self._params['enable_odom']}")
-        self.get_logger().info(
-            f"  enable_loop_closure: {self._params['enable_loop_closure']}"
-        )
-        self.get_logger().info(
-            f"  movement_threshold_distance: {self._params['movement_threshold_distance']}"
-        )
-        self.get_logger().info(
-            f"  movement_threshold_angle: {self._params['movement_threshold_angle']}"
-        )
-        self.get_logger().info(
-            f"  sequence_queue_len: {self._params['sequence_queue_len']}"
-        )
-        self.get_logger().info(
-            f"  skip_scan_interval: {self._params['skip_scan_interval']}"
-        )
-
+        self.get_logger().info("=== CSM Localization Parameters ===")
         self.get_logger().info("Grid resolution parameters:")
         self.get_logger().info(f"  fine_resolution: {self._params['fine_resolution']}")
         self.get_logger().info(
@@ -359,9 +244,6 @@ class CSMSlamNode(Node):
         self.get_logger().info("Publish topic parameters:")
         self.get_logger().info(f"  map_topic: {self._params['map_topic']}")
         self.get_logger().info(f"  pub_odom_topic: {self._params['pub_odom_topic']}")
-        self.get_logger().info(
-            f"  pose_graph_output_path: {self._params['pose_graph_output_path']}"
-        )
 
         self.get_logger().info("Transform parameters:")
         self.get_logger().info(f"  base_link_name: {self._params['base_link_name']}")
@@ -378,37 +260,29 @@ class CSMSlamNode(Node):
         )
 
         self.get_logger().info("Subscribe topic parameters:")
-        self.get_logger().info(f"  odom_topic: {self._params['odom_topic']}")
         self.get_logger().info(f"  lidar_topic: {self._params['lidar_topic']}")
+        self.get_logger().info(
+            f"  initial_pose_topic: {self._params['initial_pose_topic']}"
+        )
 
         self.get_logger().info("Subscribe topic type parameters:")
         self.get_logger().info(f"  lidar_type: {self._params['lidar_type']}")
 
-        self.get_logger().info("Sequence scan matcher parameters:")
+        self.get_logger().info("Localization parameters:")
         self.get_logger().info(
-            f"  sequence_match_distance: {self._params['sequence_match_distance']}"
-        )
-        self.get_logger().info(
-            f"  sequence_match_angle: {self._params['sequence_match_angle']}"
-        )
-        self.get_logger().info(
-            f"  sequence_match_factor: {self._params['sequence_match_factor']}"
+            f"  pose_graph_input_path: {self._params['pose_graph_input_path']}"
         )
 
-        self.get_logger().info("Loop scan matcher parameters:")
+        self.get_logger().info("Scan to map matching parameters:")
         self.get_logger().info(
-            f"  loop_match_distance: {self._params['loop_match_distance']}"
+            f"  search_distance: {self._params['search_distance']}"
         )
-        self.get_logger().info(
-            f"  loop_match_angle: {self._params['loop_match_angle']}"
-        )
-        self.get_logger().info(
-            f"  loop_match_factor: {self._params['loop_match_factor']}"
-        )
+        self.get_logger().info(f"  search_angle: {self._params['search_angle']}")
+        self.get_logger().info(f"  search_factor: {self._params['search_factor']}")
         self.get_logger().info("==========================")
 
     def _create_subscribers(self):
-        """Create subscribers for laser scan and odometry data."""
+        """Create subscribers for laser scan and initial pose data."""
         # Laser scan subscriber
         if self._params["lidar_type"] == "LaserScan":
             self._scan_subscriber = self.create_subscription(
@@ -422,13 +296,7 @@ class CSMSlamNode(Node):
                 10,
             )
 
-        # Odometry subscriber (only if enabled)
-        if self._params["enable_odom"]:
-            self._odom_subscriber = self.create_subscription(
-                Odometry, self._params["odom_topic"], self._odom_callback, 10
-            )
-
-        # Initial pose subscriber (placeholder)
+        # Initial pose subscriber
         self._initial_pose_subscriber = self.create_subscription(
             PoseWithCovarianceStamped,
             self._params["initial_pose_topic"],
@@ -439,10 +307,6 @@ class CSMSlamNode(Node):
         self.get_logger().info(
             f"Subscribed to laser scan topic: {self._params['lidar_topic']}"
         )
-        if self._params["enable_odom"]:
-            self.get_logger().info(
-                f"Subscribed to odometry topic: {self._params['odom_topic']}"
-            )
         self.get_logger().info(
             f"Subscribed to initial pose topic: {self._params['initial_pose_topic']}"
         )
@@ -477,19 +341,6 @@ class CSMSlamNode(Node):
             self._latest_scan = scan_xy
             self._process_latest_data()
 
-    def _odom_callback(self, msg: Odometry):
-        """
-        Handle Odometry messages.
-
-        Parameters
-        ----------
-        msg : Odometry
-            Odometry message.
-
-        """
-        with self._odom_lock:
-            self._latest_odom = msg
-
     def _initial_pose_callback(self, msg: PoseWithCovarianceStamped):
         """
         Handle initial pose messages.
@@ -500,22 +351,15 @@ class CSMSlamNode(Node):
             PoseWithCovarianceStamped message.
 
         """
-        self._slam.set_initial_pose(ros_utils.initial_pose_to_numpy(msg))
+        self._localization.set_initial_pose(ros_utils.initial_pose_to_numpy(msg))
 
     def _process_latest_data(self):
-        """Process the latest laser scan and odometry data."""
+        """Process the latest laser scan data."""
         if self._latest_scan is None:
             return
 
-        self._scan_counter += 1
-        if self._skip_scan_interval > 1 and (
-            (self._scan_counter - 1) % self._skip_scan_interval != 0
-        ):
-            return
-
-        # Process scan with latest odometry (if available)
-        odom = self._latest_odom if self._params["enable_odom"] else None
-        self._slam.process_scan(self._latest_scan, odom)
+        # Process scan
+        self._localization.process_scan(self._latest_scan)
 
     def _publish_transforms(self, current_pose):
         """
@@ -538,7 +382,7 @@ class CSMSlamNode(Node):
 
     def _publish_data(self, grid: Grid, current_pose: np.ndarray):
         """
-        Publish the current map, odometry, and trajectory data.
+        Publish the current map, odometry, and transform data.
 
         Parameters
         ----------
@@ -558,6 +402,7 @@ class CSMSlamNode(Node):
             stamp,
         )
         self._map_publisher.publish(occ_grid)
+
         odom = Odometry()
         odom.header.stamp = stamp.to_msg()
         odom.header.frame_id = self._params["map_frame_name"]
@@ -570,19 +415,6 @@ class CSMSlamNode(Node):
         cov = np.eye(6) * 0.01
         odom.pose.covariance = cov.flatten().tolist()
         self._odom_publisher.publish(odom)
-        trajectory_poses = ros_utils.poses_to_path(
-            self._slam.poses,
-            self._params["map_frame_name"],
-            stamp,
-        )
-        self._trajectory_publisher.publish(trajectory_poses)
-
-        edges_marker = ros_utils.graph_edges_to_marker(
-            self._slam.get_graph_edges(),
-            self._params["map_frame_name"],
-            stamp,
-        )
-        self._edges_publisher.publish(edges_marker)
 
         # Publish base_link to map transform if enabled
         if self._params["publish_base_to_map_transform"]:
@@ -598,26 +430,16 @@ class CSMSlamNode(Node):
         self._publish_thread.start()
 
     def _publish_thread_loop(self):
-        """
-        Publish thread loop that publishes data at a fixed frequency.
-
-        This method runs in a separate thread and continuously publishes
-        the current map, odometry, trajectory, and transforms at the
-        configured frequency.
-        """
+        """Publish thread loop that publishes data at a fixed frequency."""
         publish_freq = self._params.get("publish_frequency", 10.0)
         publish_period = 1.0 / publish_freq if publish_freq > 0 else 0.1
 
         while not self._shutdown_requested:
             try:
-                # Get current state from SLAM
+                # Get current state from localization
                 with self._publish_lock:
-                    current_pose = self._slam.current_pose
-                    map_grid = self._slam.occupancy_map
-
-                # Publish data
-                if map_grid is not None:
-                    self._publish_data(map_grid, current_pose)
+                    current_pose = self._localization.current_pose
+                self._publish_data(self._map_grid, current_pose)
 
             except Exception as exc:
                 self.get_logger().error(
@@ -626,57 +448,6 @@ class CSMSlamNode(Node):
 
             # Sleep for the publish period
             time.sleep(publish_period)
-
-    def _save_pose_graph_callback(self, request, response):
-        """
-        Service callback to save the pose graph to a MessagePack file.
-
-        Parameters
-        ----------
-        request : Trigger.Request
-            Service request (empty for Trigger service).
-        response : Trigger.Response
-            Service response containing success status and message.
-
-        Returns
-        -------
-        Trigger.Response
-            Response with success flag and message.
-
-        """
-        try:
-            output_path = self._params.get("pose_graph_output_path", "")
-            if not output_path:
-                # Generate default filename with timestamp
-                import datetime
-
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_path = f"pose_graph_{timestamp}.pg"
-                self.get_logger().info(
-                    f"No output path specified, using default: {output_path}"
-                )
-
-            # Ensure .pg extension
-            if not output_path.endswith(".pg"):
-                output_path = f"{output_path}.pg"
-
-            # Export the pose graph
-            self._slam.save_pose_graph(
-                output_path,
-                extra_meta={
-                    "map_frame": self._params["map_frame_name"],
-                    "base_link": self._params["base_link_name"],
-                },
-            )
-
-            response.success = True
-            response.message = f"Pose graph saved to {output_path}"
-            self.get_logger().info(response.message)
-        except Exception as exc:
-            response.success = False
-            response.message = f"Failed to save pose graph: {str(exc)}"
-            self.get_logger().error(response.message)
-        return response
 
     def destroy_node(self):
         """Clean up resources and stop publishing thread before destroying node."""
@@ -692,9 +463,9 @@ class CSMSlamNode(Node):
 
 
 def main(args=None):
-    """Run the main entry point for the CSM SLAM online node."""
+    """Run the main entry point for the CSM localization node."""
     rclpy.init(args=args)
-    node = CSMSlamNode()
+    node = CSMLocalizationNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

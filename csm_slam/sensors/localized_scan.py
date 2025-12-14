@@ -41,9 +41,9 @@ class LocalizedScan:
         Initial pose [x, y, theta] in meters and radians.
     scan : numpy.ndarray
         2xN array of scan points in sensor frame.
-    low_resolution : float, optional
+    coarse_resolution : float, optional
         Resolution for coarse free-space map in meters (default: 0.1).
-    high_resolution : float, optional
+    fine_resolution : float, optional
         Resolution for fine free-space map in meters (default: 0.05).
 
     """
@@ -53,19 +53,19 @@ class LocalizedScan:
         scan_id: int,
         pose: np.ndarray,
         scan: np.ndarray,
-        low_resolution: float = 0.1,
-        high_resolution: float = 0.05,
+        coarse_resolution: float = 0.1,
+        fine_resolution: float = 0.05,
     ):
         self._id = scan_id
         self._pose = pose
         self._original_scan = scan
         self._localized_scan = transform_scan(self._original_scan, self._pose)
 
-        self._low_resolution = low_resolution
-        self._high_resolution = high_resolution
+        self._coarse_resolution = coarse_resolution
+        self._fine_resolution = fine_resolution
 
-        self._low_free_space_map = create_free_space_map(scan, self._low_resolution)
-        self._high_free_space_map = create_free_space_map(scan, self._high_resolution)
+        self._low_free_space_map = create_free_space_map(scan, self._coarse_resolution)
+        self._high_free_space_map = create_free_space_map(scan, self._fine_resolution)
 
     #########################################################
     # Properties                                            #
@@ -87,11 +87,11 @@ class LocalizedScan:
         return {
             'low': {
                 'points': transform_scan(self._low_free_space_map, self._pose),
-                'resolution': self._low_resolution,
+                'resolution': self._coarse_resolution,
             },
             'high': {
                 'points': transform_scan(self._high_free_space_map, self._pose),
-                'resolution': self._high_resolution,
+                'resolution': self._fine_resolution,
             },
         }
 

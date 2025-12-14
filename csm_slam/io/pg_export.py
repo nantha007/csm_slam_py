@@ -14,55 +14,33 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 """
-Utilities to export pose graphs and scans to an HDF5 `.pg` file.
+Utilities to export pose graphs, scans, and submaps to a MessagePack `.pg` file.
 
-The exported layout is intentionally simple and self-describing:
-- /vertices/ids          : int64 [N]         vertex IDs
-- /vertices/poses        : float64 [N,3]     [x, y, theta] per vertex
-- /edges/ids             : int64 [E,3]       [edge_id, from_id, to_id]
-- /edges/relative_poses  : float64 [E,3]     [dx, dy, dtheta] per edge
-- /edges/covariance      : float64 [E,3,3]   covariance matrices; identity if missing
-- /scans/scan_<id>       : float32 [2,N]     original scan points in sensor frame
-                          attrs: scan_id (int), vertex_id (int), pose (float64[3])
-- /meta (attrs)          : file_format, created_utc, plus any user metadata
-
-This keeps the file easy to inspect and consume from other tools while retaining
-all required information to reconstruct the trajectory and measurements.
+Author: Nantha Kumar Sunder
 """
 
 from __future__ import annotations
 
-import datetime as _dt
 import os
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Optional
 
-import h5py
+import msgpack
 import numpy as np
 
 from csm_slam.backend.graph import Graph
 from csm_slam.sensors.localized_scan import LocalizedScan
+from csm_slam.mapping.submap import Submap
 
 
 def _collect_vertices(graph: Graph) -> tuple[np.ndarray, np.ndarray]:
     vertices = graph.get_vertices()
-    if not vertices:
-        return np.zeros((0,), dtype=np.int64), np.zeros((0, 3), dtype=np.float64)
-
-    sorted_items = sorted(vertices.items(), key=lambda kv: kv[0])
-    vertex_ids = np.array([vid for vid, _ in sorted_items], dtype=np.int64)
-    poses = np.vstack([v.pose for _, v in sorted_items]).astype(np.float64, copy=False)
+    vertex_ids = np.array([vid for vid in vertices.keys()], dtype=np.int64)
+    poses = np.vstack([v.pose for v in vertices.values()]).astype(np.float64, copy=False)
     return vertex_ids, poses
 
 
-def _collect_edges(graph: Graph) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _collect_edges(graph: Graph) -> tuple[np.ndarray, np.ndarray, list]:
     edges = graph.get_edges()
-    if not edges:
-        return (
-            np.zeros((0, 3), dtype=np.int64),
-            np.zeros((0, 3), dtype=np.float64),
-            np.zeros((0, 3, 3), dtype=np.float64),
-        )
-
     sorted_edges = sorted(edges.values(), key=lambda e: e.edge_id)
     ids = np.stack(
         [
@@ -77,42 +55,43 @@ def _collect_edges(graph: Graph) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     covs = []
     for e in sorted_edges:
-        if e.cov is None:
-            covs.append(np.eye(3, dtype=np.float64))
-        else:
-            covs.append(np.array(e.cov, dtype=np.float64, copy=False))
-    cov_stack = np.stack(covs, axis=0) if covs else np.zeros((0, 3, 3))
-    return ids, rel_poses, cov_stack
+        covs.append(np.array(e.cov, dtype=np.float64, copy=False))
+    return ids, rel_poses, covs
 
 
-def _iter_scans(scans: Sequence[LocalizedScan] | Mapping | Iterable[LocalizedScan]):
-    if isinstance(scans, Mapping):
-        scan_iter = scans.values()
-    else:
-        scan_iter = scans
-    return sorted(scan_iter, key=lambda s: s.scan_id)
+def _iter_scans(scans: dict[int, LocalizedScan]):
+    return sorted(scans.values(), key=lambda s: s.scan_id)
 
 
-def save_pose_graph_hdf5(
+def _iter_submaps(submaps: dict[int, Submap]):
+    """Normalize and sort submaps by submap_id."""
+    return sorted(submaps.values(), key=lambda sm: sm.submap_id)
+
+
+def save_pose_graph_msgpack(
     graph: Graph,
-    scans: Sequence[LocalizedScan] | Mapping | Iterable[LocalizedScan],
+    scans: dict[int, LocalizedScan],
+    submaps: dict[int, Submap],
     file_path: str,
     meta: Optional[dict] = None,
 ) -> None:
     """
-    Save the pose graph and original scans into an HDF5 `.pg` file.
+    Save the pose graph and original scans into a MessagePack `.pg` file.
 
     Parameters
     ----------
     graph : Graph
         Pose graph containing vertices and edges.
-    scans : Sequence[LocalizedScan] | Mapping | Iterable[LocalizedScan]
+    scans : dict[int, LocalizedScan]
         Collection of localized scans; each must expose `scan_id`, `pose`,
         and `get_original_scan()`.
+    submaps : dict[int, Submap]
+        Collection of submaps to store; each must expose `submap_id`,
+        `first_scan_id`, `pose`, and `scan_ids`.
+    meta : dict, optional
+        Additional metadata to store in the file.
     file_path : str
         Destination file path (should end with `.pg`).
-    meta : dict, optional
-        Additional metadata to store as attributes under `/meta`.
 
     """
     os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
@@ -120,39 +99,55 @@ def save_pose_graph_hdf5(
     vertex_ids, vertex_poses = _collect_vertices(graph)
     edge_ids, edge_rel_poses, edge_covs = _collect_edges(graph)
     sorted_scans = _iter_scans(scans)
+    sorted_submaps = _iter_submaps(submaps)
 
-    with h5py.File(file_path, "w") as f:
-        # Vertices
-        vgrp = f.create_group("vertices")
-        vgrp.create_dataset("ids", data=vertex_ids, dtype="i8")
-        vgrp.create_dataset("poses", data=vertex_poses, dtype="f8")
+    # Build MessagePack dictionary structure
+    data = {
+        "version": 1,
+        "meta": {
+            "num_vertices": int(vertex_ids.shape[0]),
+            "num_edges": int(edge_ids.shape[0]),
+            "num_scans": int(len(sorted_scans)),
+            "num_submaps": int(len(sorted_submaps)),
+        },
+        "vertices": {
+            "ids": vertex_ids.tolist(),
+            "poses": vertex_poses.tolist(),
+        },
+        "edges": {
+            "ids": edge_ids.tolist(),
+            "relative_poses": edge_rel_poses.tolist(),
+            "covariances": [
+                cov.tolist() if cov is not None else None for cov in edge_covs
+            ],
+        },
+        "scans": [
+            {
+                "scan_id": int(scan.scan_id),
+                "vertex_id": int(scan.scan_id),
+                "pose": np.array(scan.pose, dtype=np.float64, copy=False).tolist(),
+                "scan_data": np.array(
+                    scan.get_original_scan(), dtype=np.float32, copy=False
+                ).tolist(),
+            }
+            for scan in sorted_scans
+        ],
+    }
 
-        # Edges
-        egrp = f.create_group("edges")
-        egrp.create_dataset("ids", data=edge_ids, dtype="i8")
-        egrp.create_dataset("relative_poses", data=edge_rel_poses, dtype="f8")
-        egrp.create_dataset("covariance", data=edge_covs, dtype="f8")
+    data["submaps"] = [
+        {
+            "submap_id": int(sm.submap_id),
+            "first_scan_id": int(sm.first_scan_id),
+            "pose": np.array(sm.pose, dtype=np.float64, copy=False).tolist(),
+            "scan_ids": [int(sid) for sid in sm.scan_ids],
+        }
+        for sm in sorted_submaps
+    ]
 
-        # Scans
-        sgrp = f.create_group("scans")
-        for scan in sorted_scans:
-            dataset = sgrp.create_dataset(
-                f"scan_{scan.scan_id}",
-                data=np.array(scan.get_original_scan(), dtype=np.float32, copy=False),
-                dtype="f4",
-            )
-            dataset.attrs["scan_id"] = int(scan.scan_id)
-            dataset.attrs["vertex_id"] = int(scan.scan_id)
-            dataset.attrs["pose"] = np.array(scan.pose, dtype=np.float64, copy=False)
+    # Add additional metadata if provided
+    if meta:
+        data["meta"].update(meta)
 
-        # Metadata
-        mgrp = f.create_group("meta")
-        mgrp.attrs["file_format"] = "csm_slam_pg_hdf5_v1"
-        mgrp.attrs["created_utc"] = _dt.datetime.utcnow().isoformat() + "Z"
-        mgrp.attrs["num_vertices"] = int(vertex_ids.shape[0])
-        mgrp.attrs["num_edges"] = int(edge_ids.shape[0])
-        mgrp.attrs["num_scans"] = int(len(sorted_scans))
-        if meta:
-            for key, value in meta.items():
-                mgrp.attrs[key] = value
-
+    # Serialize and write to file
+    with open(file_path, "wb") as f:
+        f.write(msgpack.packb(data))

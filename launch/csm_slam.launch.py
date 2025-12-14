@@ -16,8 +16,7 @@
 """
 Launch file for CSM SLAM online node with rosbag playback.
 
-This launch file loads configuration parameters, starts the CSM SLAM online node,
-and plays a rosbag2 file to provide sensor data.
+Author: Nantha Kumar Sunder
 """
 
 import os
